@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/admin/LogoutButton";
 import { isAdmin } from "@/lib/auth";
+import { countUnreadComments } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ const NAV = [
 
 export default async function DashLayout({ children }: LayoutProps<"/admin">) {
   if (!(await isAdmin().catch(() => false))) redirect("/admin/login");
+  const unread = await countUnreadComments().catch(() => 0);
 
   return (
     <div className="min-h-dvh">
@@ -28,6 +30,11 @@ export default async function DashLayout({ children }: LayoutProps<"/admin">) {
               {NAV.map((item) => (
                 <Link key={item.href} href={item.href} className="hover:text-foreground whitespace-nowrap">
                   {item.label}
+                  {item.href === "/admin/comments" && unread > 0 ? (
+                    <span className="ml-1.5 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-xs leading-none">
+                      {unread > 99 ? "99+" : unread}
+                    </span>
+                  ) : null}
                 </Link>
               ))}
             </nav>
@@ -40,7 +47,7 @@ export default async function DashLayout({ children }: LayoutProps<"/admin">) {
           </div>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
+      <main className="w-full px-4 py-6 lg:px-6">{children}</main>
     </div>
   );
 }

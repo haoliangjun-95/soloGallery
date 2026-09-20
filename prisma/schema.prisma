@@ -105,6 +105,7 @@ model Comment {
   adminReply   String?        @db.Text
   adminReplyAt DateTime?
   status       CommentStatus  @default(PENDING)
+  readAt       DateTime?
   ip           String?        @db.VarChar(64)
   createdAt    DateTime       @default(now())
 

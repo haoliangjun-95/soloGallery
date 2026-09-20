@@ -126,62 +126,75 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
         ) : null}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
         {items.map((photo) => (
           <div
             key={photo.id}
-            className={`relative rounded-xl overflow-hidden border bg-card ${
-              selected.has(photo.id) ? "border-foreground/60" : "border-edge"
+            className={`group relative rounded-xl overflow-hidden border bg-card ${
+              selected.has(photo.id) ? "border-foreground/80 ring-2 ring-foreground/40" : "border-edge"
             }`}
           >
-            <Link href={`/photo/${photo.sha1}`} target="_blank">
-              <img
-                src={photo.thumbUrl}
-                alt={photo.title}
-                loading="lazy"
-                className="w-full h-40 object-cover"
-              />
-            </Link>
-            <label className="absolute top-2 left-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs cursor-pointer">
-              <input type="checkbox" checked={selected.has(photo.id)} onChange={() => toggle(photo.id)} />
-            </label>
-            <div className="absolute top-2 right-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => patchPhoto(photo.id, { favorite: !photo.favorite })}
-                disabled={busy}
-                title={photo.favorite ? "已收藏，点击取消" : "点击收藏"}
-                className={`leading-none ${photo.favorite ? "text-amber-400" : "text-white/50 hover:text-amber-300"} disabled:opacity-40`}
-              >
-                ★
-              </button>
-              <input
-                type="checkbox"
-                role="switch"
-                checked={photo.published}
-                disabled={busy}
-                title={photo.published ? "已发布，点击隐藏" : "未发布，点击发布"}
-                onChange={(e) => patchPhoto(photo.id, { published: e.target.checked })}
-                className="cursor-pointer accent-emerald-500"
-              />
-            </div>
-            <div className="p-2">
-              <p className="text-xs truncate" title={photo.title}>
-                {photo.title || photo.fileName}
-              </p>
-              <div className="mt-1 flex flex-wrap items-center gap-1">
+            <div className="relative aspect-square">
+              <Link href={`/photo/${photo.sha1}`} target="_blank" className="block h-full">
+                <img
+                  src={photo.thumbUrl}
+                  alt={photo.title}
+                  loading="lazy"
+                  className="w-full h-full object-cover"
+                />
+              </Link>
+
+              {/* 左上：勾选 */}
+              <label className="absolute top-2 left-2 flex items-center rounded-md bg-black/60 px-2 py-1 cursor-pointer">
+                <input type="checkbox" checked={selected.has(photo.id)} onChange={() => toggle(photo.id)} />
+              </label>
+
+              {/* 右上：收藏 + 发布开关 */}
+              <div className="absolute top-2 right-2 flex items-center gap-2 rounded-md bg-black/60 px-2 py-1">
+                <button
+                  type="button"
+                  onClick={() => patchPhoto(photo.id, { favorite: !photo.favorite })}
+                  disabled={busy}
+                  title={photo.favorite ? "已收藏，点击取消" : "点击收藏"}
+                  className={`leading-none ${photo.favorite ? "text-amber-400" : "text-white/50 hover:text-amber-300"} disabled:opacity-40`}
+                >
+                  ★
+                </button>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={photo.published}
+                  disabled={busy}
+                  title={photo.published ? "已发布，点击隐藏" : "未发布，点击发布"}
+                  onChange={(e) => patchPhoto(photo.id, { published: e.target.checked })}
+                  className="cursor-pointer accent-emerald-500"
+                />
+              </div>
+
+              {/* 左下常显状态角标 */}
+              <div className="absolute left-2 bottom-2 flex gap-1">
                 {photo.missing ? <Badge color="amber">源缺失</Badge> : null}
                 {!photo.published && !photo.missing ? <Badge>未发布</Badge> : null}
-                <Badge>{photo.source === "SYNC" ? "同步" : "上传"}</Badge>
-                {photo.category ? <Badge>{photo.category}</Badge> : null}
               </div>
+
+              {/* 悬浮：编辑入口 */}
               <button
                 type="button"
                 onClick={() => setEditing(photo)}
-                className="mt-2 text-xs text-muted hover:text-foreground underline"
+                className="absolute right-2 bottom-2 rounded-md bg-black/60 px-2 py-1 text-xs text-white/90 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 编辑
               </button>
+            </div>
+
+            {/* 图片下方紧凑信息：名称 / 分类 / 标签 */}
+            <div className="px-2 py-1.5 space-y-0.5">
+              <p className="text-xs truncate" title={photo.title}>
+                {photo.title || photo.fileName}
+              </p>
+              <p className="text-[10px] text-muted truncate">
+                {[photo.category, ...photo.tags.map((t) => `#${t}`)].filter(Boolean).join(" ") || "—"}
+              </p>
             </div>
           </div>
         ))}
@@ -189,27 +202,10 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
 
       {items.length === 0 ? (
         <div className="py-24 text-center text-muted">
-          没有图片。去 <Link href="/admin/sync" className="underline">同步</Link> 或{" "}
+          没有符合条件的图片。调整筛选条件，或去 <Link href="/admin/sync" className="underline">同步</Link> /{" "}
           <Link href="/admin/upload" className="underline">上传</Link>。
         </div>
       ) : null}
-
-      <div className="flex justify-between mt-6 text-sm">
-        {page > 1 ? (
-          <Link href={`/admin/photos?page=${page - 1}`} className="text-muted hover:text-foreground">
-            ← 上一页
-          </Link>
-        ) : (
-          <span />
-        )}
-        {page < pages ? (
-          <Link href={`/admin/photos?page=${page + 1}`} className="text-muted hover:text-foreground">
-            下一页 →
-          </Link>
-        ) : (
-          <span />
-        )}
-      </div>
 
       {editing ? <EditModal photo={editing} categories={categories} onClose={() => setEditing(null)} /> : null}
     </div>

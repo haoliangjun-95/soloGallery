@@ -1,6 +1,6 @@
 import Link from "next/link";
 import CommentsClient from "@/components/admin/CommentsClient";
-import { listCommentsAdmin } from "@/lib/queries";
+import { listCommentsAdmin, markAllCommentsRead } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +19,8 @@ export default async function AdminCommentsPage({
   const sp = await searchParams;
   const status = TABS.some((t) => t.key === sp.status) ? (sp.status || undefined) : "PENDING";
   const comments = await listCommentsAdmin(status as "PENDING" | "APPROVED" | "SPAM" | undefined);
+  // 打开评论页即视为已读（角标清零）
+  await markAllCommentsRead();
 
   return (
     <div>

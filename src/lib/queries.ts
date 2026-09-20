@@ -23,6 +23,8 @@ export interface ListOptions {
   q?: string;
   /** 仅看收藏 */
   favorite?: boolean;
+  /** 月份筛选 YYYY-MM */
+  month?: string;
   publishedOnly?: boolean;
   includeMissing?: boolean;
 }
@@ -90,6 +92,16 @@ export async function listPhotos(options: ListOptions = {}): Promise<{ items: Ph
   const page = Math.max(1, options.page ?? 1);
   const pageSize = Math.min(96, Math.max(1, options.pageSize ?? (Number(settings.pageSize) || 24)));
   const q = options.q?.trim().slice(0, 64);
+  const monthMatch = /^(\d{4})-(\d{2})$/.exec(options.month ?? "");
+  // 月份边界按展示时区 Asia/Shanghai（+08:00）计算，与日历分组一致
+  const my = monthMatch ? Number(monthMatch[1]) : 0;
+  const mm = monthMatch ? Number(monthMatch[2]) : 0;
+  const monthStart = monthMatch ? new Date(`${monthMatch[1]}-${monthMatch[2]}-01T00:00:00+08:00`) : undefined;
+  const monthEnd = monthMatch
+    ? new Date(
+        `${mm === 12 ? my + 1 : my}-${String(mm === 12 ? 1 : mm + 1).padStart(2, "0")}-01T00:00:00+08:00`,
+      )
+    : undefined;
   const where = {
     ...(options.publishedOnly === false ? {} : { published: true }),
     ...(options.includeMissing ? {} : { missing: false }),
@@ -103,6 +115,7 @@ export async function listPhotos(options: ListOptions = {}): Promise<{ items: Ph
           },
         }
       : {}),
+    ...(monthStart && monthEnd ? { shotAt: { gte: monthStart, lt: monthEnd } } : {}),
     ...(q ? { OR: [{ title: { contains: q } }, { fileName: { contains: q } }] } : {}),
     ...(options.favorite ? { favorite: true } : {}),
   };
@@ -119,8 +132,10 @@ export async function listPhotos(options: ListOptions = {}): Promise<{ items: Ph
   return { items: rows.map(toCard), total, page, pageSize };
 }
 
-/** 管理端列表（含未发布/missing 状态标记）。 */
-export async function listPhotosAdmin(options: ListOptions = {}): Promise<{
+/** 管理端列表（含筛选与状态标记）。status: published/unpublished/missing。 */
+export async function listPhotosAdmin(
+  options: ListOptions & { status?: "published" | "unpublished" | "missing" } = {},
+): Promise<{
   items: AdminPhotoDTO[];
   total: number;
   page: number;
@@ -129,9 +144,23 @@ export async function listPhotosAdmin(options: ListOptions = {}): Promise<{
   const settings = await getSettings();
   const page = Math.max(1, options.page ?? 1);
   const pageSize = Math.min(96, Math.max(1, options.pageSize ?? (Number(settings.pageSize) || 24)));
+  const q = options.q?.trim().slice(0, 64);
+  const year = options.year && Number.isInteger(options.year) ? options.year : undefined;
   const where = {
     ...(options.categorySlug ? { category: { slug: options.categorySlug } } : {}),
     ...(options.tag ? { photoTags: { some: { tag: { name: options.tag } } } } : {}),
+    ...(q ? { OR: [{ title: { contains: q } }, { fileName: { contains: q } }] } : {}),
+    ...(year
+      ? { shotAt: { gte: new Date(year, 0, 1), lt: new Date(year + 1, 0, 1) } }
+      : {}),
+    ...(options.favorite ? { favorite: true } : {}),
+    ...(options.status === "published"
+      ? { published: true, missing: false }
+      : options.status === "unpublished"
+        ? { published: false }
+        : options.status === "missing"
+          ? { missing: true }
+          : {}),
   };
   const [rows, total] = await Promise.all([
     prisma.photo.findMany({
@@ -227,16 +256,95 @@ export async function countFavorites(): Promise<number> {
   return prisma.photo.count({ where: { published: true, missing: false, favorite: true } });
 }
 
-/** 年份分组（按拍摄时间，仅公开图），倒序：[{year: 2026, count: 12}, ...]。 */
-export async function listYears(): Promise<{ year: number; count: number }[]> {
+export interface MonthGroup {
+  ym: string; // YYYY-MM
+  year: number;
+  month: number;
+  count: number;
+  photos: { sha1: string; thumbUrl: string; title: string; favorite: boolean }[];
+}
+
+/** 有照片的月份列表（倒序），日历视图与前后月切换用。 */
+export async function listMonths(publishedOnly = true): Promise<{ ym: string; count: number }[]> {
+  const { Prisma } = await import("@/generated/prisma/client");
+  const cond = publishedOnly ? Prisma.sql`AND published = 1 AND missing = 0` : Prisma.empty;
+  const rows = await prisma.$queryRaw<Array<{ ym: string; count: bigint }>>`
+    SELECT DATE_FORMAT(shotAt, '%Y-%m') AS ym, COUNT(*) AS count
+    FROM Photo
+    WHERE shotAt IS NOT NULL ${cond}
+    GROUP BY ym
+    ORDER BY ym DESC
+  `;
+  return rows.map((r) => ({ ym: r.ym, count: Number(r.count) }));
+}
+
+/** 日历视图全量轻量数据（已发布，按拍摄时间倒序），JS 侧按月分组。 */
+export async function listPhotosCalendar(): Promise<MonthGroup[]> {
+  const rows = await prisma.photo.findMany({
+    where: { published: true, missing: false },
+    orderBy: [{ shotAt: "desc" }, { createdAt: "desc" }],
+    select: { sha1: true, thumbKey: true, title: true, favorite: true, shotAt: true },
+  });
+  const groups = new Map<string, MonthGroup>();
+  const monthFmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+  });
+  for (const r of rows) {
+    if (!r.shotAt) continue;
+    // 按展示时区（Asia/Shanghai）分月，en-CA 输出 YYYY-MM
+    const key = monthFmt.format(r.shotAt).replaceAll("/", "-");
+    let g = groups.get(key);
+    if (!g) {
+      g = {
+        ym: key,
+        year: Number(key.slice(0, 4)),
+        month: Number(key.slice(5, 7)),
+        count: 0,
+        photos: [],
+      };
+      groups.set(key, g);
+    }
+    g.count++;
+    g.photos.push({
+      sha1: r.sha1,
+      thumbUrl: publicUrl(r.thumbKey ?? displayKey(r.sha1)),
+      title: r.title,
+      favorite: r.favorite,
+    });
+  }
+  return [...groups.values()].sort((a, b) => (a.ym < b.ym ? 1 : -1));
+}
+
+/** 年份分组（按拍摄时间），倒序：[{year: 2026, count: 12}, ...]。publishedOnly=false 时含未发布。 */
+export async function listYears(publishedOnly = true): Promise<{ year: number; count: number }[]> {
+  const { Prisma } = await import("@/generated/prisma/client");
+  const cond = publishedOnly ? Prisma.sql`AND published = 1 AND missing = 0` : Prisma.empty;
   const rows = await prisma.$queryRaw<Array<{ year: number; count: bigint }>>`
     SELECT YEAR(shotAt) AS year, COUNT(*) AS count
     FROM Photo
-    WHERE shotAt IS NOT NULL AND published = 1 AND missing = 0
+    WHERE shotAt IS NOT NULL ${cond}
     GROUP BY YEAR(shotAt)
     ORDER BY year DESC
   `;
   return rows.map((r) => ({ year: Number(r.year), count: Number(r.count) }));
+}
+
+/** 未读评论数（待审/已通过且从未被后台查看过；垃圾拦截的不计）。 */
+export async function countUnreadComments(): Promise<number> {
+  return prisma.comment.count({
+    where: { readAt: null, status: { in: ["PENDING", "APPROVED"] } },
+  });
+}
+
+/** 后台打开评论页即视为已读：批量打标。 */
+export async function markAllCommentsRead(): Promise<number> {
+  const res = await prisma.comment.updateMany({
+    where: { readAt: null, status: { in: ["PENDING", "APPROVED"] } },
+    data: { readAt: new Date() },
+  });
+  return res.count;
 }
 
 export async function listCommentsAdmin(status?: "PENDING" | "APPROVED" | "SPAM"): Promise<CommentAdminDTO[]> {
