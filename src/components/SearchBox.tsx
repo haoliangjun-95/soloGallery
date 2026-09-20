@@ -27,7 +27,7 @@ export default function SearchBox({ initialQuery = "" }: { initialQuery?: string
         onChange={(e) => setValue(e.target.value)}
         placeholder="搜索照片名称…"
         maxLength={64}
-        className="w-full rounded-full bg-background border border-edge px-4 py-1.5 text-sm outline-none focus:border-foreground/40"
+        className="w-full h-12 rounded-full bg-background border border-edge px-5 text-sm outline-none focus:border-foreground/40"
       />
       {value ? (
         <button

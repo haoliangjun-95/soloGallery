@@ -11,11 +11,12 @@ export default async function SiteLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="min-h-dvh flex flex-col">
       <header className="sticky top-0 z-20 backdrop-blur bg-background/80 border-b border-edge">
-        <div className="w-full px-4 lg:px-6 h-14 flex items-center gap-4">
-          <div className="flex items-center gap-3 min-w-0 shrink-0">
+        <div className="w-full px-4 lg:px-6 h-16 flex items-center gap-4">
+          {/* 品牌仅在移动端页头展示；桌面端头像+名称移至左侧栏顶部 */}
+          <div className="flex lg:hidden items-center gap-3 min-w-0 shrink-0">
             {settings?.siteLogo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={settings.siteLogo} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+              <img src={settings.siteLogo} alt="" className="h-12 w-12 rounded-full object-cover shrink-0" />
             ) : null}
             <Link href="/" className="text-lg font-semibold tracking-wide hover:opacity-80 truncate">
               {settings?.siteTitle ?? "soloGallery"}
