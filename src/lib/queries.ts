@@ -19,6 +19,8 @@ export interface ListOptions {
   categorySlug?: string;
   tag?: string;
   year?: number;
+  /** 按名称搜索（标题/文件名，不区分大小写包含匹配） */
+  q?: string;
   publishedOnly?: boolean;
   includeMissing?: boolean;
 }
@@ -84,6 +86,7 @@ export async function listPhotos(options: ListOptions = {}): Promise<{ items: Ph
   const settings = await getSettings();
   const page = Math.max(1, options.page ?? 1);
   const pageSize = Math.min(96, Math.max(1, options.pageSize ?? (Number(settings.pageSize) || 24)));
+  const q = options.q?.trim().slice(0, 64);
   const where = {
     ...(options.publishedOnly === false ? {} : { published: true }),
     ...(options.includeMissing ? {} : { missing: false }),
@@ -97,6 +100,7 @@ export async function listPhotos(options: ListOptions = {}): Promise<{ items: Ph
           },
         }
       : {}),
+    ...(q ? { OR: [{ title: { contains: q } }, { fileName: { contains: q } }] } : {}),
   };
   const [rows, total] = await Promise.all([
     prisma.photo.findMany({

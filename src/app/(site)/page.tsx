@@ -5,30 +5,33 @@ import PhotoGrid from "@/components/PhotoGrid";
 export const dynamic = "force-dynamic";
 
 interface Props extends PageProps<"/"> {
-  searchParams: Promise<{ category?: string; tag?: string; year?: string }>;
+  searchParams: Promise<{ category?: string; tag?: string; year?: string; q?: string }>;
 }
 
 export default async function HomePage({ searchParams }: Props) {
   const sp = await searchParams;
   const year = Number.isInteger(Number(sp.year)) && Number(sp.year) > 1970 ? Number(sp.year) : undefined;
+  const q = sp.q?.trim().slice(0, 64) || undefined;
   const [{ items, total, pageSize }, categories, tags, years] = await Promise.all([
-    listPhotos({ categorySlug: sp.category, tag: sp.tag, year }),
+    listPhotos({ categorySlug: sp.category, tag: sp.tag, year, q }),
     listCategories(),
     listTags(),
     listYears(),
   ]);
 
   /** 组合筛选链接：覆盖一个维度、保留其余维度。 */
-  const qs = (patch: { category?: string | null; tag?: string | null; year?: number | null }) => {
+  const qs = (patch: { category?: string | null; tag?: string | null; year?: number | null; q?: string | null }) => {
     const params = new URLSearchParams();
     const merged = {
       category: "category" in patch ? patch.category : sp.category,
       tag: "tag" in patch ? patch.tag : sp.tag,
       year: "year" in patch ? (patch.year ? String(patch.year) : null) : sp.year,
+      q: "q" in patch ? patch.q : sp.q,
     };
     if (merged.category) params.set("category", merged.category);
     if (merged.tag) params.set("tag", merged.tag);
     if (merged.year) params.set("year", merged.year);
+    if (merged.q) params.set("q", merged.q);
     const s = params.toString();
     return s ? `/?${s}` : "/";
   };
@@ -36,7 +39,7 @@ export default async function HomePage({ searchParams }: Props) {
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       <div className="flex flex-wrap items-center gap-2 mb-6 text-sm">
-        <FilterLink href={qs({ category: null, tag: null, year: null })} active={!sp.category && !sp.tag && !sp.year}>
+        <FilterLink href={qs({ category: null, tag: null, year: null, q: null })} active={!sp.category && !sp.tag && !sp.year && !q}>
           全部
         </FilterLink>
         {categories.map((c) => (
@@ -60,18 +63,22 @@ export default async function HomePage({ searchParams }: Props) {
         ))}
       </div>
 
-      {year ? (
+      {q ? (
+        <h1 className="text-xl font-semibold mb-6">
+          搜索「{q}」 <span className="text-sm text-muted font-normal">{total} 张</span>
+        </h1>
+      ) : year ? (
         <h1 className="text-xl font-semibold mb-6">
           {year} 年 <span className="text-sm text-muted font-normal">{total} 张</span>
         </h1>
       ) : null}
 
       <PhotoGrid
-        key={`${sp.category ?? ""}|${sp.tag ?? ""}|${sp.year ?? ""}|${total}`}
+        key={`${sp.category ?? ""}|${sp.tag ?? ""}|${sp.year ?? ""}|${q ?? ""}|${total}`}
         initialItems={items}
         total={total}
         pageSize={pageSize}
-        query={{ category: sp.category, tag: sp.tag, year }}
+        query={{ category: sp.category, tag: sp.tag, year, q }}
       />
     </div>
   );

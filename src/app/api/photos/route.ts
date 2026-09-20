@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     categorySlug: sp.get("category") ?? undefined,
     tag: sp.get("tag") ?? undefined,
     year: Number.isInteger(year) && year > 1970 && year < 9999 ? year : undefined,
+    q: sp.get("q") ?? undefined,
   });
   return json(result);
 }
