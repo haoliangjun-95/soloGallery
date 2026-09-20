@@ -18,8 +18,8 @@ interface Props {
   initialItems: PhotoCardDTO[];
   total: number;
   pageSize: number;
-  /** normal：瀑布+信息卡；square：正方形纯图；masonry：瀑布纯图；list：列表 */
-  view?: "normal" | "square" | "masonry" | "list";
+  /** normal：瀑布+信息卡；square：正方形纯图；fixed：固定 3:4 统一卡片+信息卡；masonry：瀑布纯图；list：列表 */
+  view?: "normal" | "square" | "fixed" | "masonry" | "list";
   query?: { category?: string; tag?: string; year?: number; q?: string; fav?: boolean; month?: string };
 }
 
@@ -132,6 +132,14 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
             </Link>
           ))}
         </div>
+      ) : view === "fixed" ? (
+        // 固定宽高（参考 PhotoPrism Cards 视图）：统一正方形图片区 + cover 居中裁切 + 图下信息卡；
+        // auto-fill 自适应列数（手机 2 列 / 平板笔记本 3 列 / 大屏 5-6 列），间距 6px 对齐 PhotoPrism
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(160px,40vw),1fr))] sm:grid-cols-[repeat(auto-fill,minmax(230px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-1.5 items-start">
+          {items.map((photo) => (
+            <PhotoCard key={photo.sha1} photo={photo} cover />
+          ))}
+        </div>
       ) : view === "list" ? (
         <div className="divide-y divide-edge rounded-xl border border-edge bg-card overflow-hidden">
           {items.map((photo) => {
@@ -184,8 +192,9 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
   );
 }
 
-/** 单张卡片：图 + 收藏星标 + 标题/分类/标签/拍摄信息（参考用户给的样图布局）。 */
-function PhotoCard({ photo }: { photo: PhotoCardDTO }) {
+/** 单张卡片：图 + 收藏星标 + 标题/分类/标签/拍摄信息（参考用户给的样图布局）。
+ *  cover=true 时图片固定正方形裁切铺满，用于固定宽高视图（PhotoPrism Cards 风格）。 */
+function PhotoCard({ photo, cover }: { photo: PhotoCardDTO; cover?: boolean }) {
   const exif = photo.exif;
   const meta: { icon: React.ReactNode; text: string; title?: string }[] = [];
 
@@ -228,18 +237,26 @@ function PhotoCard({ photo }: { photo: PhotoCardDTO }) {
   }
 
   return (
-    <div className="mb-3 break-inside-avoid rounded-xl overflow-hidden bg-card border border-edge transition-transform hover:-translate-y-0.5">
-      <div className="relative">
-        <Link href={`/photo/${photo.sha1}`} className="block">
+    <div
+      className={`rounded-xl overflow-hidden bg-card border border-edge transition-transform hover:-translate-y-0.5${
+        cover ? " group" : " mb-3 break-inside-avoid"
+      }`}
+    >
+      <div className={cover ? "relative aspect-square overflow-hidden bg-card" : "relative"}>
+        <Link href={`/photo/${photo.sha1}`} className={cover ? "block h-full" : "block"}>
           {/* 图片为 MinIO 公共读 WebP 变体，无需走 next/image 优化代理 */}
           <img
             src={photo.thumbUrl}
             alt={photo.title}
-            width={photo.width ?? undefined}
-            height={photo.height ?? undefined}
+            width={cover ? undefined : (photo.width ?? undefined)}
+            height={cover ? undefined : (photo.height ?? undefined)}
             loading="lazy"
             decoding="async"
-            className="w-full h-auto block"
+            className={
+              cover
+                ? "h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                : "w-full h-auto block"
+            }
           />
         </Link>
         {photo.favorite ? (
@@ -250,35 +267,38 @@ function PhotoCard({ photo }: { photo: PhotoCardDTO }) {
       </div>
 
       <div className="p-3">
-        <Link
-          href={`/photo/${photo.sha1}`}
-          className="block text-sm font-medium truncate hover:underline"
-          title={photo.title}
-        >
-          {photo.title}
-        </Link>
+        {/* 第一行：名称在左（超长截断），分类+标签芯片在右靠右对齐 */}
+        <div className="flex min-w-0 items-center gap-2">
+          <Link
+            href={`/photo/${photo.sha1}`}
+            className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
+            title={photo.title}
+          >
+            {photo.title}
+          </Link>
 
-        {photo.category || photo.tags.length > 0 ? (
-          <div className="mt-1.5 flex flex-wrap gap-1">
-            {photo.category ? (
-              <Link
-                href={`/category/${photo.category.slug}`}
-                className="rounded border border-edge px-1.5 py-0.5 text-[11px] text-muted hover:text-foreground"
-              >
-                {photo.category.name}
-              </Link>
-            ) : null}
-            {photo.tags.map((t) => (
-              <Link
-                key={t}
-                href={`/tag/${encodeURIComponent(t)}`}
-                className="rounded border border-edge px-1.5 py-0.5 text-[11px] text-muted hover:text-foreground"
-              >
-                #{t}
-              </Link>
-            ))}
-          </div>
-        ) : null}
+          {photo.category || photo.tags.length > 0 ? (
+            <div className="flex shrink-0 items-center gap-1">
+              {photo.category ? (
+                <Link
+                  href={`/category/${photo.category.slug}`}
+                  className="rounded border border-edge px-1.5 py-0.5 text-[11px] text-muted hover:text-foreground"
+                >
+                  {photo.category.name}
+                </Link>
+              ) : null}
+              {photo.tags.map((t) => (
+                <Link
+                  key={t}
+                  href={`/tag/${encodeURIComponent(t)}`}
+                  className="rounded border border-edge px-1.5 py-0.5 text-[11px] text-muted hover:text-foreground"
+                >
+                  #{t}
+                </Link>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
         {meta.length > 0 ? (
           <ul className="mt-2 space-y-1">

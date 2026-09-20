@@ -31,9 +31,10 @@ export default async function HomePage({ searchParams }: Props) {
   const year = Number.isInteger(Number(sp.year)) && Number(sp.year) > 1970 ? Number(sp.year) : undefined;
   const q = sp.q?.trim().slice(0, 64) || undefined;
   const fav = sp.fav === "1";
-  const view = (["square", "masonry", "list", "calendar"] as const).includes(sp.view as never)
-    ? (sp.view as "square" | "masonry" | "list" | "calendar")
-    : "normal";
+  // 无 view 参数时默认固定宽高视图；normal 不再是默认，需显式 ?view=normal
+  const view = (["normal", "square", "fixed", "masonry", "list", "calendar"] as const).includes(sp.view as never)
+    ? (sp.view as "normal" | "square" | "fixed" | "masonry" | "list" | "calendar")
+    : "fixed";
   const month = /^(\d{4})-(\d{2})$/.test(sp.month ?? "") ? sp.month : undefined;
 
   const [categories, tags, years, favCount, calendarMonths] = await Promise.all([
