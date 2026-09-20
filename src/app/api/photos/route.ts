@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     year: Number.isInteger(year) && year > 1970 && year < 9999 ? year : undefined,
     q: sp.get("q") ?? undefined,
     favorite: sp.get("fav") === "1",
+    month: sp.get("month") ?? undefined,
   });
   return json(result);
 }

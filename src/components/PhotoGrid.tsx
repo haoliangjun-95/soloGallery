@@ -20,7 +20,7 @@ interface Props {
   pageSize: number;
   /** normal：瀑布+信息卡；square：正方形纯图；masonry：瀑布纯图；list：列表 */
   view?: "normal" | "square" | "masonry" | "list";
-  query?: { category?: string; tag?: string; year?: number; q?: string; fav?: boolean };
+  query?: { category?: string; tag?: string; year?: number; q?: string; fav?: boolean; month?: string };
 }
 
 export default function PhotoGrid({ initialItems, total, pageSize, view = "normal", query }: Props) {
@@ -44,6 +44,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
       if (query?.year) params.set("year", String(query.year));
       if (query?.q) params.set("q", query.q);
       if (query?.fav) params.set("fav", "1");
+      if (query?.month) params.set("month", query.month);
       const res = await fetch(`/api/photos?${params.toString()}`);
       if (!res.ok) throw new Error("加载失败");
       const data = (await res.json()) as { items: PhotoCardDTO[]; total: number };
