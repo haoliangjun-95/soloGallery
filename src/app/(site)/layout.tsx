@@ -1,11 +1,9 @@
 import SearchBox from "@/components/SearchBox";
 import ViewToggle from "@/components/ViewToggle";
 import { getSettings } from "@/lib/settings";
-import { isAdmin } from "@/lib/auth";
 
 export default async function SiteLayout({ children }: LayoutProps<"/">) {
   const settings = await getSettings().catch(() => null);
-  const admin = await isAdmin().catch(() => false);
   return (
     <div className="min-h-dvh flex flex-col">
       <header className="sticky top-0 z-20 backdrop-blur bg-background/80 border-b border-edge">
@@ -13,7 +11,7 @@ export default async function SiteLayout({ children }: LayoutProps<"/">) {
           {/* 品牌仅在移动端页头展示（只留头像，空间让给搜索框）；桌面端头像+名称在左侧栏顶部 */}
           <div className="flex lg:hidden items-center gap-3 min-w-0 shrink-0">
             {settings?.siteLogo ? (
-              // eslint-disable-next-line @nextjs/no-img-element
+              // eslint-disable-next-line @next/next/no-img-element
               <img src={settings.siteLogo} alt="" className="h-12 w-12 rounded-full object-cover shrink-0" />
             ) : null}
           </div>
