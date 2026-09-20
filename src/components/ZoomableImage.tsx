@@ -12,9 +12,11 @@ export default function ZoomableImage({ src, alt }: { src: string; alt: string }
     };
     window.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
+    document.body.dataset.lightbox = "1"; // 详情页 ESC 据此让位：先关灯箱再退页
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
+      delete document.body.dataset.lightbox;
     };
   }, [open]);
 

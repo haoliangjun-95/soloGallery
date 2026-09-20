@@ -20,16 +20,6 @@ export default async function SiteLayout({ children }: LayoutProps<"/">) {
             <Link href="/" className="text-lg font-semibold tracking-wide hover:opacity-80 truncate">
               {settings?.siteTitle ?? "soloGallery"}
             </Link>
-            <nav className="hidden sm:flex items-center gap-4 text-sm text-muted">
-              <Link href="/" className="hover:text-foreground">
-                画廊
-              </Link>
-              {admin ? (
-                <Link href="/admin/photos" className="hover:text-foreground">
-                  后台
-                </Link>
-              ) : null}
-            </nav>
           </div>
           <div className="flex-1 min-w-0 flex">
             <SearchBox />

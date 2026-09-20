@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import BackOnEsc from "@/components/BackOnEsc";
 import CommentSection from "@/components/CommentSection";
 import ExifCard from "@/components/ExifCard";
 import ZoomableImage from "@/components/ZoomableImage";
@@ -35,6 +36,7 @@ export default async function PhotoPage({ params }: PageProps<"/photo/[sha1]">) 
 
   return (
     <div className="w-full max-w-[1900px] mx-auto px-4 py-6 lg:px-6">
+      <BackOnEsc />
       {admin && !row.published ? (
         <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">
           该图片{row.missing ? "源已缺失且" : ""}未发布，仅管理员可见 ·{" "}
