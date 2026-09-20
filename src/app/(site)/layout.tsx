@@ -15,7 +15,7 @@ export default async function SiteLayout({ children }: LayoutProps<"/">) {
           <div className="flex items-center gap-3 min-w-0 shrink-0">
             {settings?.siteLogo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={settings.siteLogo} alt="" className="h-8 w-8 rounded-lg object-cover shrink-0" />
+              <img src={settings.siteLogo} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
             ) : null}
             <Link href="/" className="text-lg font-semibold tracking-wide hover:opacity-80 truncate">
               {settings?.siteTitle ?? "soloGallery"}

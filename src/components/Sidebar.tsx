@@ -99,7 +99,7 @@ export default function Sidebar({ categories, tags, years, totalAll, totalFav, s
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-xs font-medium text-muted/70 uppercase tracking-wider mb-1.5 px-2">{title}</h3>
+      <h3 className="text-xs font-medium text-foreground/40 uppercase tracking-wider mb-1.5 px-2">{title}</h3>
       <div className="space-y-0.5">{children}</div>
     </div>
   );
@@ -124,17 +124,17 @@ function Item({
     <Link
       href={href}
       className={`flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors ${
-        active ? "bg-foreground/10 text-foreground" : "text-muted hover:bg-foreground/5 hover:text-foreground"
+        active ? "bg-foreground/15 text-foreground" : "text-foreground/90 hover:bg-foreground/10"
       }`}
       aria-current={active ? "page" : undefined}
     >
       {icon ? (
-        <span className={`w-4 text-center shrink-0 ${star ? "text-amber-400" : "opacity-60"}`} aria-hidden>
+        <span className={`w-4 text-center shrink-0 ${star ? "text-amber-400" : "opacity-70"}`} aria-hidden>
           {icon}
         </span>
       ) : null}
       <span className="truncate flex-1">{label}</span>
-      {typeof count === "number" && count > 0 ? <span className="text-xs opacity-60 shrink-0">{count}</span> : null}
+      {typeof count === "number" && count > 0 ? <span className="text-xs opacity-50 shrink-0">{count}</span> : null}
     </Link>
   );
 }

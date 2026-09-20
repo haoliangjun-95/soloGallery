@@ -83,7 +83,7 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
         <span className="text-muted">站点 Logo（显示在站点名称左侧）</span>
         <div className="flex items-center gap-3">
           {logo ? (
-            <img src={logo} alt="logo" className="h-12 w-12 rounded-lg border border-edge object-cover" />
+            <img src={logo} alt="logo" className="h-12 w-12 rounded-full border border-edge object-cover" />
           ) : (
             <div className="h-12 w-12 rounded-lg border border-dashed border-edge flex items-center justify-center text-muted text-xs">
               无
