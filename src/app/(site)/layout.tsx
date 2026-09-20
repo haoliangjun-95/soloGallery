@@ -31,7 +31,7 @@ export default async function SiteLayout({ children }: LayoutProps<"/">) {
               ) : null}
             </nav>
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 flex">
             <SearchBox />
           </div>
           <Suspense fallback={null}>
