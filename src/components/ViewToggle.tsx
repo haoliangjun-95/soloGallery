@@ -2,9 +2,9 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 
-export type ViewMode = "normal" | "square" | "masonry" | "large" | "list";
+export type ViewMode = "normal" | "square" | "masonry" | "list";
 
-/** 右上角视图切换：详细 / 拼图 / 瀑布纯图 / 大图 / 列表。 */
+/** 右上角视图切换：详细 / 拼图 / 瀑布纯图 / 列表。 */
 const MODES: { key: ViewMode; title: string; icon: React.ReactNode }[] = [
   {
     key: "normal",
@@ -41,16 +41,6 @@ const MODES: { key: ViewMode; title: string; icon: React.ReactNode }[] = [
         <rect x="3" y="17" width="5" height="4" />
         <rect x="10" y="13" width="5" height="8" />
         <rect x="17" y="19" width="4" height="2" />
-      </svg>
-    ),
-  },
-  {
-    key: "large",
-    title: "大图视图（双列大图 + 信息卡）",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="4" width="8" height="16" />
-        <rect x="13" y="4" width="8" height="16" />
       </svg>
     ),
   },

@@ -18,8 +18,8 @@ interface Props {
   initialItems: PhotoCardDTO[];
   total: number;
   pageSize: number;
-  /** normal：瀑布+信息卡；square：正方形纯图；masonry：瀑布纯图；large：双列大图；list：列表 */
-  view?: "normal" | "square" | "masonry" | "large" | "list";
+  /** normal：瀑布+信息卡；square：正方形纯图；masonry：瀑布纯图；list：列表 */
+  view?: "normal" | "square" | "masonry" | "list";
   query?: { category?: string; tag?: string; year?: number; q?: string; fav?: boolean };
 }
 
@@ -131,12 +131,6 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
             </Link>
           ))}
         </div>
-      ) : view === "large" ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 min-[2200px]:grid-cols-3 gap-4 lg:gap-5">
-          {items.map((photo) => (
-            <PhotoCard key={photo.sha1} photo={photo} />
-          ))}
-        </div>
       ) : view === "list" ? (
         <div className="divide-y divide-edge rounded-xl border border-edge bg-card overflow-hidden">
           {items.map((photo) => {
@@ -147,30 +141,28 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
               <Link
                 key={photo.sha1}
                 href={`/photo/${photo.sha1}`}
-                className="flex items-center gap-4 p-3 hover:bg-foreground/5 transition-colors"
+                className="flex items-center gap-3 px-3 py-1.5 hover:bg-foreground/5 transition-colors"
               >
                 <img
                   src={photo.thumbUrl}
                   alt={photo.title}
                   loading="lazy"
                   decoding="async"
-                  className="h-20 w-32 object-cover rounded-lg shrink-0"
+                  className="h-10 w-16 object-cover rounded shrink-0"
                 />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">{photo.title}</p>
-                  {date || camera ? (
-                    <p className="text-xs text-muted truncate mt-0.5">
-                      {[date, camera].filter(Boolean).join(" · ")}
-                    </p>
-                  ) : null}
-                  <p className="text-xs text-muted/70 truncate mt-0.5">{photo.fileName}</p>
+                <div className="min-w-0 flex-1 flex items-baseline gap-3">
+                  <p className="text-sm truncate shrink-0 max-w-[30%]">{photo.title}</p>
+                  <p className="text-xs text-muted truncate flex-1">
+                    {[date, camera].filter(Boolean).join(" · ")}
+                  </p>
+                  <p className="hidden md:block text-xs text-muted/70 truncate">{photo.fileName}</p>
                 </div>
                 {photo.category ? (
                   <span className="hidden sm:inline rounded border border-edge px-1.5 py-0.5 text-[11px] text-muted shrink-0">
                     {photo.category.name}
                   </span>
                 ) : null}
-                {photo.favorite ? <span className="text-amber-400 shrink-0">★</span> : null}
+                {photo.favorite ? <span className="text-amber-400 text-xs shrink-0">★</span> : null}
               </Link>
             );
           })}

@@ -14,8 +14,8 @@ export default async function HomePage({ searchParams }: Props) {
   const year = Number.isInteger(Number(sp.year)) && Number(sp.year) > 1970 ? Number(sp.year) : undefined;
   const q = sp.q?.trim().slice(0, 64) || undefined;
   const fav = sp.fav === "1";
-  const view = (["square", "masonry", "large", "list"] as const).includes(sp.view as never)
-    ? (sp.view as "square" | "masonry" | "large" | "list")
+  const view = (["square", "masonry", "list"] as const).includes(sp.view as never)
+    ? (sp.view as "square" | "masonry" | "list")
     : "normal";
   const [{ items, total, pageSize }, categories, tags, years, favCount] = await Promise.all([
     listPhotos({ categorySlug: sp.category, tag: sp.tag, year, q, favorite: fav }),
