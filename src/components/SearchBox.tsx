@@ -14,14 +14,14 @@ export default function SearchBox({ initialQuery = "" }: { initialQuery?: string
   }
 
   return (
-    <form onSubmit={submit} className="relative">
+    <form onSubmit={submit} className="relative w-full max-w-xl">
       <input
         type="search"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="搜索照片名称…"
         maxLength={64}
-        className="w-40 sm:w-56 rounded-full bg-background border border-edge px-4 py-1.5 text-sm outline-none focus:border-foreground/40"
+        className="w-full max-w-xl rounded-full bg-background border border-edge px-4 py-1.5 text-sm outline-none focus:border-foreground/40"
       />
       {value ? (
         <button

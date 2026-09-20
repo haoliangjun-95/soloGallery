@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
 
 interface SettingsShape {
   siteTitle: string;
+  siteLogo: string;
   pageSize: string;
   commentsModerated: string;
   syncIntervalMinutes: string;
@@ -12,6 +14,7 @@ interface SettingsShape {
 }
 
 export default function SettingsClient({ initial }: { initial: SettingsShape }) {
+  const router = useRouter();
   const [form, setForm] = useState({
     siteTitle: initial.siteTitle,
     pageSize: initial.pageSize,
@@ -20,8 +23,39 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
     syncAutoPublish: initial.syncAutoPublish === "true",
     originalView: initial.originalView === "true",
   });
+  const [logo, setLogo] = useState(initial.siteLogo);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  async function uploadLogo(file: File) {
+    setLogoBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/admin/logo", { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "上传失败");
+      setLogo(data.logo);
+      router.refresh();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "上传失败");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  async function removeLogo() {
+    setLogoBusy(true);
+    try {
+      await fetch("/api/admin/logo", { method: "DELETE" });
+      setLogo("");
+      router.refresh();
+    } finally {
+      setLogoBusy(false);
+    }
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -45,6 +79,50 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
 
   return (
     <form onSubmit={save} className="max-w-md space-y-5">
+      <div className="text-sm space-y-2">
+        <span className="text-muted">站点 Logo（显示在站点名称左侧）</span>
+        <div className="flex items-center gap-3">
+          {logo ? (
+            <img src={logo} alt="logo" className="h-12 w-12 rounded-lg border border-edge object-cover" />
+          ) : (
+            <div className="h-12 w-12 rounded-lg border border-dashed border-edge flex items-center justify-center text-muted text-xs">
+              无
+            </div>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={logoBusy}
+              onClick={() => logoInputRef.current?.click()}
+              className="rounded-lg border border-edge px-3 py-1.5 text-xs text-muted hover:text-foreground disabled:opacity-40"
+            >
+              {logoBusy ? "处理中…" : logo ? "更换" : "上传"}
+            </button>
+            {logo ? (
+              <button
+                type="button"
+                disabled={logoBusy}
+                onClick={removeLogo}
+                className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+              >
+                移除
+              </button>
+            ) : null}
+          </div>
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void uploadLogo(f);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      </div>
+
       <label className="block text-sm space-y-1">
         <span className="text-muted">站点标题</span>
         <input

@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import SearchBox from "@/components/SearchBox";
+import ViewToggle from "@/components/ViewToggle";
 import { getSettings } from "@/lib/settings";
 import { isAdmin } from "@/lib/auth";
 
@@ -9,12 +11,16 @@ export default async function SiteLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="min-h-dvh flex flex-col">
       <header className="sticky top-0 z-20 backdrop-blur bg-background/80 border-b border-edge">
-        <div className="w-full px-4 lg:px-6 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 min-w-0">
-            <Link href="/" className="text-lg font-semibold tracking-wide hover:opacity-80 shrink-0">
+        <div className="w-full px-4 lg:px-6 h-14 flex items-center gap-4">
+          <div className="flex items-center gap-3 min-w-0 shrink-0">
+            {settings?.siteLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={settings.siteLogo} alt="" className="h-8 w-8 rounded-lg object-cover shrink-0" />
+            ) : null}
+            <Link href="/" className="text-lg font-semibold tracking-wide hover:opacity-80 truncate">
               {settings?.siteTitle ?? "soloGallery"}
             </Link>
-            <nav className="flex items-center gap-4 text-sm text-muted">
+            <nav className="hidden sm:flex items-center gap-4 text-sm text-muted">
               <Link href="/" className="hover:text-foreground">
                 画廊
               </Link>
@@ -25,7 +31,12 @@ export default async function SiteLayout({ children }: LayoutProps<"/">) {
               ) : null}
             </nav>
           </div>
-          <SearchBox />
+          <div className="flex-1 flex justify-center min-w-0">
+            <SearchBox />
+          </div>
+          <Suspense fallback={null}>
+            <ViewToggle />
+          </Suspense>
         </div>
       </header>
       <main className="flex-1">{children}</main>

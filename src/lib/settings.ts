@@ -2,6 +2,7 @@ import { prisma } from "./db";
 
 export const SETTING_DEFAULTS = {
   siteTitle: "soloGallery",
+  siteLogo: "",
   pageSize: "24",
   commentsModerated: "false",
   syncIntervalMinutes: "15",

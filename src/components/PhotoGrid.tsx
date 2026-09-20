@@ -18,10 +18,12 @@ interface Props {
   initialItems: PhotoCardDTO[];
   total: number;
   pageSize: number;
+  /** normal：瀑布流 + 信息卡；square：正方形纯图拼接 */
+  view?: "normal" | "square";
   query?: { category?: string; tag?: string; year?: number; q?: string; fav?: boolean };
 }
 
-export default function PhotoGrid({ initialItems, total, pageSize, query }: Props) {
+export default function PhotoGrid({ initialItems, total, pageSize, view = "normal", query }: Props) {
   const [items, setItems] = useState(initialItems);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -81,11 +83,37 @@ export default function PhotoGrid({ initialItems, total, pageSize, query }: Prop
 
   return (
     <div>
-      <div className="columns-2 sm:columns-3 xl:columns-4 2xl:columns-5 min-[2800px]:columns-6 gap-3 lg:gap-4 [column-fill:_balance]">
-        {items.map((photo) => (
-          <PhotoCard key={photo.sha1} photo={photo} />
-        ))}
-      </div>
+      {view === "square" ? (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-1 sm:gap-1.5">
+          {items.map((photo) => (
+            <Link
+              key={photo.sha1}
+              href={`/photo/${photo.sha1}`}
+              className="group relative block aspect-square overflow-hidden bg-card"
+              title={photo.title}
+            >
+              <img
+                src={photo.thumbUrl}
+                alt={photo.title}
+                loading="lazy"
+                decoding="async"
+                className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+              />
+              {photo.favorite ? (
+                <span className="absolute left-1.5 bottom-1.5 text-amber-400 text-sm drop-shadow-[0_1px_2px_rgba(0,0,0,.8)]">
+                  ★
+                </span>
+              ) : null}
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <div className="columns-2 sm:columns-3 xl:columns-4 2xl:columns-5 min-[2800px]:columns-6 gap-3 lg:gap-4 [column-fill:_balance]">
+          {items.map((photo) => (
+            <PhotoCard key={photo.sha1} photo={photo} />
+          ))}
+        </div>
+      )}
 
       <div ref={sentinelRef} className="h-10" />
       <div className="text-center text-xs text-muted pb-8">

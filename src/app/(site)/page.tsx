@@ -6,7 +6,7 @@ import Sidebar from "@/components/Sidebar";
 export const dynamic = "force-dynamic";
 
 interface Props extends PageProps<"/"> {
-  searchParams: Promise<{ category?: string; tag?: string; year?: string; q?: string; fav?: string }>;
+  searchParams: Promise<{ category?: string; tag?: string; year?: string; q?: string; fav?: string; view?: string }>;
 }
 
 export default async function HomePage({ searchParams }: Props) {
@@ -14,6 +14,7 @@ export default async function HomePage({ searchParams }: Props) {
   const year = Number.isInteger(Number(sp.year)) && Number(sp.year) > 1970 ? Number(sp.year) : undefined;
   const q = sp.q?.trim().slice(0, 64) || undefined;
   const fav = sp.fav === "1";
+  const view = sp.view === "square" ? "square" : "normal";
   const [{ items, total, pageSize }, categories, tags, years, favCount] = await Promise.all([
     listPhotos({ categorySlug: sp.category, tag: sp.tag, year, q, favorite: fav }),
     listCategories(),
@@ -87,10 +88,11 @@ export default async function HomePage({ searchParams }: Props) {
         ) : null}
 
         <PhotoGrid
-          key={`${sp.category ?? ""}|${sp.tag ?? ""}|${sp.year ?? ""}|${q ?? ""}|${fav ? "fav" : ""}|${total}`}
+          key={`${sp.category ?? ""}|${sp.tag ?? ""}|${sp.year ?? ""}|${q ?? ""}|${fav ? "fav" : ""}|${view}|${total}`}
           initialItems={items}
           total={total}
           pageSize={pageSize}
+          view={view}
           query={{ category: sp.category, tag: sp.tag, year, q, fav }}
         />
       </div>

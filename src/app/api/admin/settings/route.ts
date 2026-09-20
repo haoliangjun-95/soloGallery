@@ -17,7 +17,7 @@ export async function PUT(request: NextRequest) {
   if (!body || typeof body !== "object") return badRequest("非法请求体");
 
   const patch: Partial<Record<SettingKey, string>> = {};
-  const strings: SettingKey[] = ["siteTitle", "pageSize", "syncIntervalMinutes"];
+  const strings: SettingKey[] = ["siteTitle", "siteLogo", "pageSize", "syncIntervalMinutes"];
   const booleans: SettingKey[] = ["commentsModerated", "syncAutoPublish", "originalView"];
   for (const key of strings) {
     if (typeof body[key] === "string") patch[key] = (body[key] as string).slice(0, 512);
