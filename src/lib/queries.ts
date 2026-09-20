@@ -22,27 +22,62 @@ export interface ListOptions {
   includeMissing?: boolean;
 }
 
-function toCard(p: {
+type CardSource = {
   id: number;
   sha1: string;
   title: string;
+  fileName: string;
+  format: string;
+  fileSize: bigint;
   thumbKey: string | null;
   width: number | null;
   height: number | null;
   shotAt: Date | null;
-}): PhotoCardDTO {
+  exif: unknown;
+  wallpaperSnapshot: unknown;
+  category: { name: string; slug: string } | null;
+  photoTags: { tag: { name: string } }[];
+};
+
+function toCard(p: CardSource): PhotoCardDTO {
   const display = displayKey(p.sha1);
+  const snapshot = p.wallpaperSnapshot as { favorite?: boolean } | null;
   return {
     id: p.id,
     sha1: p.sha1,
     title: p.title,
+    fileName: p.fileName,
+    format: p.format,
+    fileSize: Number(p.fileSize),
     thumbUrl: p.thumbKey ? publicUrl(p.thumbKey) : publicUrl(display),
     displayUrl: publicUrl(display),
     width: p.width,
     height: p.height,
     shotAt: p.shotAt ? p.shotAt.toISOString() : null,
+    exif: (p.exif as PhotoCardDTO["exif"]) ?? null,
+    category: p.category,
+    tags: p.photoTags.map((pt) => pt.tag.name).sort(),
+    favorite: Boolean(snapshot?.favorite),
   };
 }
+
+/** 列表卡片所需的关联与字段（前台/管理端共用）。 */
+const CARD_SELECT = {
+  id: true,
+  sha1: true,
+  title: true,
+  fileName: true,
+  format: true,
+  fileSize: true,
+  thumbKey: true,
+  width: true,
+  height: true,
+  shotAt: true,
+  exif: true,
+  wallpaperSnapshot: true,
+  category: { select: { name: true, slug: true } },
+  photoTags: { select: { tag: { select: { name: true } } } },
+} as const;
 
 export async function listPhotos(options: ListOptions = {}): Promise<{ items: PhotoCardDTO[]; total: number; page: number; pageSize: number }> {
   const settings = await getSettings();
@@ -60,15 +95,7 @@ export async function listPhotos(options: ListOptions = {}): Promise<{ items: Ph
       orderBy: [{ shotAt: "desc" }, { createdAt: "desc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
-      select: {
-        id: true,
-        sha1: true,
-        title: true,
-        thumbKey: true,
-        width: true,
-        height: true,
-        shotAt: true,
-      },
+      select: CARD_SELECT,
     }),
     prisma.photo.count({ where }),
   ]);
@@ -95,27 +122,13 @@ export async function listPhotosAdmin(options: ListOptions = {}): Promise<{
       orderBy: [{ createdAt: "desc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
-      select: {
-        id: true,
-        sha1: true,
-        title: true,
-        fileName: true,
-        thumbKey: true,
-        width: true,
-        height: true,
-        shotAt: true,
-        published: true,
-        missing: true,
-        source: true,
-        category: { select: { name: true } },
-      },
+      select: { ...CARD_SELECT, published: true, missing: true, source: true },
     }),
     prisma.photo.count({ where }),
   ]);
   return {
     items: rows.map((p) => ({
       ...toCard(p),
-      fileName: p.fileName,
       published: p.published,
       missing: p.missing,
       source: p.source,

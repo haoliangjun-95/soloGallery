@@ -10,6 +10,22 @@ import type { NormalizedExif } from "./exif";
 
 const TZ = "Asia/Shanghai";
 
+/** 列表卡片用的短日期：2026年5月4日 周一 */
+export function formatShotDateShort(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("year")}年${get("month")}月${get("day")}日 ${get("weekday")}`;
+}
+
 export function formatShotDate(iso: string | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);

@@ -6,11 +6,18 @@ export interface PhotoCardDTO {
   id: number;
   sha1: string;
   title: string;
+  fileName: string;
+  format: string;
+  fileSize: number;
   thumbUrl: string;
   displayUrl: string;
   width: number | null;
   height: number | null;
   shotAt: string | null;
+  exif: NormalizedExif | null;
+  category: { name: string; slug: string } | null;
+  tags: string[];
+  favorite: boolean;
 }
 
 export interface CommentDTO {
@@ -63,8 +70,7 @@ export interface CommentAdminDTO extends CommentDTO {
   photoSha1: string;
 }
 
-export interface AdminPhotoDTO extends PhotoCardDTO {
-  fileName: string;
+export interface AdminPhotoDTO extends Omit<PhotoCardDTO, "category"> {
   published: boolean;
   missing: boolean;
   source: "SYNC" | "UPLOAD";

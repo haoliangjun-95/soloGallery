@@ -1,6 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  formatAperture,
+  formatCamera,
+  formatDimensions,
+  formatExposure,
+  formatFileSize,
+  formatShotDateShort,
+} from "@/lib/exif-format";
 import type { PhotoCardDTO } from "@/lib/types";
 
 interface Props {
@@ -69,22 +78,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, query }: Prop
     <div>
       <div className="columns-2 sm:columns-3 lg:columns-4 gap-3 [column-fill:_balance]">
         {items.map((photo) => (
-          <a
-            key={photo.sha1}
-            href={`/photo/${photo.sha1}`}
-            className="mb-3 block break-inside-avoid rounded-xl overflow-hidden bg-card border border-edge transition-transform hover:-translate-y-0.5"
-          >
-            {/* 图片为 MinIO 公共读 WebP 变体，无需走 next/image 优化代理 */}
-            <img
-              src={photo.thumbUrl}
-              alt={photo.title}
-              width={photo.width ?? undefined}
-              height={photo.height ?? undefined}
-              loading="lazy"
-              decoding="async"
-              className="w-full h-auto block"
-            />
-          </a>
+          <PhotoCard key={photo.sha1} photo={photo} />
         ))}
       </div>
 
@@ -93,5 +87,152 @@ export default function PhotoGrid({ initialItems, total, pageSize, query }: Prop
         {done ? `共 ${total} 张` : loading ? "加载中…" : ""}
       </div>
     </div>
+  );
+}
+
+/** 单张卡片：图 + 收藏星标 + 标题/分类/标签/拍摄信息（参考用户给的样图布局）。 */
+function PhotoCard({ photo }: { photo: PhotoCardDTO }) {
+  const exif = photo.exif;
+  const meta: { icon: React.ReactNode; text: string }[] = [];
+
+  const date = formatShotDateShort(photo.shotAt ?? exif?.shotAt);
+  if (date) meta.push({ icon: <IconCalendar />, text: date });
+
+  const cameraBits = [
+    formatCamera(exif?.make, exif?.model),
+    exif?.iso !== undefined ? `ISO ${exif.iso}` : null,
+    formatExposure(exif?.exposureTime),
+  ].filter(Boolean);
+  if (cameraBits.length) meta.push({ icon: <IconCamera />, text: cameraBits.join(", ") });
+
+  const lensBits = [
+    exif?.lensModel,
+    exif?.focalLength !== undefined ? `${Math.round(exif.focalLength)}mm` : null,
+    formatAperture(exif?.fNumber),
+  ].filter(Boolean);
+  if (lensBits.length) meta.push({ icon: <IconLens />, text: lensBits.join(", ") });
+
+  const fileBits = [
+    photo.format,
+    formatDimensions(photo.width ?? undefined, photo.height ?? undefined),
+    photo.fileSize ? formatFileSize(photo.fileSize) : null,
+  ].filter(Boolean);
+  if (fileBits.length) meta.push({ icon: <IconImage />, text: fileBits.join(", ") });
+
+  if (photo.fileName) meta.push({ icon: <IconFile />, text: photo.fileName });
+
+  return (
+    <div className="mb-3 break-inside-avoid rounded-xl overflow-hidden bg-card border border-edge transition-transform hover:-translate-y-0.5">
+      <div className="relative">
+        <Link href={`/photo/${photo.sha1}`} className="block">
+          {/* 图片为 MinIO 公共读 WebP 变体，无需走 next/image 优化代理 */}
+          <img
+            src={photo.thumbUrl}
+            alt={photo.title}
+            width={photo.width ?? undefined}
+            height={photo.height ?? undefined}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-auto block"
+          />
+        </Link>
+        {photo.favorite ? (
+          <span className="absolute left-2 bottom-2 text-amber-400 drop-shadow-[0_1px_2px_rgba(0,0,0,.8)]" title="收藏">
+            ★
+          </span>
+        ) : null}
+      </div>
+
+      <div className="p-3">
+        <Link
+          href={`/photo/${photo.sha1}`}
+          className="block text-sm font-medium truncate hover:underline"
+          title={photo.title}
+        >
+          {photo.title}
+        </Link>
+
+        {photo.category || photo.tags.length > 0 ? (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {photo.category ? (
+              <Link
+                href={`/category/${photo.category.slug}`}
+                className="rounded border border-edge px-1.5 py-0.5 text-[11px] text-muted hover:text-foreground"
+              >
+                {photo.category.name}
+              </Link>
+            ) : null}
+            {photo.tags.map((t) => (
+              <Link
+                key={t}
+                href={`/tag/${encodeURIComponent(t)}`}
+                className="rounded border border-edge px-1.5 py-0.5 text-[11px] text-muted hover:text-foreground"
+              >
+                #{t}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+
+        {meta.length > 0 ? (
+          <ul className="mt-2 space-y-1">
+            {meta.map((row, i) => (
+              <li key={i} className="flex items-start gap-1.5 text-xs text-muted min-w-0">
+                <span className="shrink-0 mt-[2px] opacity-70">{row.icon}</span>
+                <span className="truncate" title={row.text}>
+                  {row.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function IconCalendar() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
+    </svg>
+  );
+}
+
+function IconCamera() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+      <circle cx="12" cy="13" r="3" />
+    </svg>
+  );
+}
+
+function IconLens() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="4" />
+    </svg>
+  );
+}
+
+function IconImage() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
+    </svg>
+  );
+}
+
+function IconFile() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+    </svg>
   );
 }
