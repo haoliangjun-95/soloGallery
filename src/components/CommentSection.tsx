@@ -24,16 +24,19 @@ export default function CommentSection({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 回填浏览器缓存的昵称/邮箱
+  // 回填浏览器缓存的昵称/邮箱（延后一拍，避免 effect 体内同步 setState）
   useEffect(() => {
-    try {
-      const savedNick = localStorage.getItem(NICKNAME_KEY);
-      const savedEmail = localStorage.getItem(EMAIL_KEY);
-      if (savedNick) setNickname(savedNick);
-      if (savedEmail) setEmail(savedEmail);
-    } catch {
-      /* 隐私模式等 localStorage 不可用时静默降级 */
-    }
+    const kickoff = setTimeout(() => {
+      try {
+        const savedNick = localStorage.getItem(NICKNAME_KEY);
+        const savedEmail = localStorage.getItem(EMAIL_KEY);
+        if (savedNick) setNickname(savedNick);
+        if (savedEmail) setEmail(savedEmail);
+      } catch {
+        /* 隐私模式等 localStorage 不可用时静默降级 */
+      }
+    }, 0);
+    return () => clearTimeout(kickoff);
   }, []);
 
   async function submit(e: React.FormEvent) {

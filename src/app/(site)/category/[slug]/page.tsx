@@ -26,7 +26,7 @@ export default async function CategoryPage({
       <h1 className="text-xl font-semibold mb-6">
         {category.name} <span className="text-sm text-muted font-normal">{total} 张</span>
       </h1>
-      <PhotoGrid initialItems={items} total={total} pageSize={pageSize} query={{ category: slug }} />
+      <PhotoGrid key={slug} initialItems={items} total={total} pageSize={pageSize} query={{ category: slug }} />
     </div>
   );
 }

@@ -17,11 +17,8 @@ export default function PhotoGrid({ initialItems, total, pageSize, query }: Prop
   const [done, setDone] = useState(initialItems.length >= total);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setItems(initialItems);
-    setPage(1);
-    setDone(initialItems.length >= total);
-  }, [initialItems, total]);
+  // initialItems 变化时的重置由父组件通过 key 重挂载实现（见各页面），
+  // 避免 effect 内同步 setState 的级联渲染反模式。
 
   const loadMore = useCallback(async () => {
     if (loading || done) return;

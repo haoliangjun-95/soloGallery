@@ -19,7 +19,6 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<AdminPhotoDTO | null>(null);
 
-  const allSelected = items.length > 0 && items.every((i) => selected.has(i.id));
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
   function toggle(id: number) {
@@ -29,10 +28,6 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
       else next.add(id);
       return next;
     });
-  }
-
-  function toggleAll() {
-    setSelected(allSelected ? new Set() : new Set(items.map((i) => i.id)));
   }
 
   async function patchPhoto(id: number, data: Record<string, unknown>) {

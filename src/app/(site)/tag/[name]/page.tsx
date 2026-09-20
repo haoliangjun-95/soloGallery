@@ -13,7 +13,7 @@ export default async function TagPage({ params }: PageProps<"/tag/[name]">) {
       <h1 className="text-xl font-semibold mb-6">
         #{tag} <span className="text-sm text-muted font-normal">{total} 张</span>
       </h1>
-      <PhotoGrid initialItems={items} total={total} pageSize={pageSize} query={{ tag }} />
+      <PhotoGrid key={tag} initialItems={items} total={total} pageSize={pageSize} query={{ tag }} />
     </div>
   );
 }

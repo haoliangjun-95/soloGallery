@@ -40,6 +40,9 @@ yarn-error.log*
 # zcode workspace state
 /.zcode
 
+# IDE
+.idea/
+
 # vercel
 .vercel
 

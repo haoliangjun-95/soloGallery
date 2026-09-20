@@ -37,6 +37,7 @@ export default async function HomePage({ searchParams }: Props) {
       </div>
 
       <PhotoGrid
+        key={`${sp.category ?? ""}|${sp.tag ?? ""}|${total}`}
         initialItems={items}
         total={total}
         pageSize={pageSize}

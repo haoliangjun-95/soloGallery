@@ -38,9 +38,13 @@ export default function SyncClient() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    // 首轮延后一拍，避免 effect 体内同步 setState 的级联渲染
+    const kickoff = setTimeout(() => void refresh(), 0);
     const timer = setInterval(() => void refresh(), 3000);
-    return () => clearInterval(timer);
+    return () => {
+      clearTimeout(kickoff);
+      clearInterval(timer);
+    };
   }, [refresh]);
 
   async function trigger() {

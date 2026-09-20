@@ -1,5 +1,4 @@
 import { BUCKET_LAYOUT, displayKey, originalKey } from "./bucket-layout";
-import { publicUrl } from "./config";
 import { prisma } from "./db";
 import { extractExif } from "./exif";
 import { generateDisplay } from "./image-pipeline";
@@ -152,7 +151,7 @@ async function importPhoto(
   let webp: Buffer | null = null;
   let width: number | undefined = item.width ?? undefined;
   let height: number | undefined = item.height ?? undefined;
-  let exif = await extractExif(buf);
+  const exif = await extractExif(buf);
   try {
     const result = await generateDisplay(buf);
     webp = result.webp;
