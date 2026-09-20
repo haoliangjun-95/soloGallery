@@ -1,4 +1,5 @@
 import { buildExifLines } from "@/lib/exif-format";
+import { formatGps, gpsLabel } from "@/lib/geo";
 import type { NormalizedExif } from "@/lib/exif";
 
 export default function ExifCard({
@@ -17,6 +18,13 @@ export default function ExifCard({
   fileName: string;
 }) {
   const lines = buildExifLines({ exif, format, width, height, fileSize, fileName });
+  if (exif?.gps) {
+    lines.splice(1, 0, {
+      label: "位置",
+      value: gpsLabel(exif.gps),
+      title: formatGps(exif.gps),
+    });
+  }
   if (!lines.length) return null;
   return (
     <div className="rounded-xl border border-edge bg-card p-4">
@@ -25,7 +33,9 @@ export default function ExifCard({
         {lines.map((line) => (
           <div key={line.label} className="flex gap-3">
             <dt className="w-12 shrink-0 text-muted">{line.label}</dt>
-            <dd className="min-w-0 break-words">{line.value}</dd>
+            <dd className="min-w-0 break-words" title={line.title}>
+              {line.value}
+            </dd>
           </div>
         ))}
       </dl>

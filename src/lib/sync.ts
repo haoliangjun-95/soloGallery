@@ -1,6 +1,7 @@
 import { BUCKET_LAYOUT, displayKey, originalKey } from "./bucket-layout";
 import { prisma } from "./db";
 import { extractExif } from "./exif";
+import { reverseGeocode } from "./geo";
 import { generateDisplay } from "./image-pipeline";
 import { mergeManifests, parseManifest, type ManifestSnapshot, type MergedItem } from "./manifest";
 import { exists, getBuffer, listKeys, putBuffer } from "./s3";
@@ -152,6 +153,11 @@ async function importPhoto(
   let width: number | undefined = item.width ?? undefined;
   let height: number | undefined = item.height ?? undefined;
   const exif = await extractExif(buf);
+  // 有 GPS 则反查地名缓存进 exif（限速 1req/s，失败静默回退坐标展示）
+  if (exif?.gps) {
+    const location = await reverseGeocode(exif.gps);
+    if (location) exif.gps.location = location;
+  }
   try {
     const result = await generateDisplay(buf);
     webp = result.webp;

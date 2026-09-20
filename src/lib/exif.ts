@@ -1,5 +1,12 @@
 import exifr from "exifr";
 
+export interface GeoPoint {
+  lat: number;
+  lon: number;
+  /** 反查地名缓存（如“广东省 深圳市 大鹏新区”），无则为空 */
+  location?: string;
+}
+
 /** 归一化后的 EXIF（入库 exif 字段的形状）。 */
 export interface NormalizedExif {
   shotAt?: string; // ISO 8601
@@ -12,6 +19,7 @@ export interface NormalizedExif {
   focalLength?: number; // mm
   focalLength35?: number;
   orientation?: number;
+  gps?: GeoPoint;
 }
 
 const PICK = [
@@ -26,6 +34,8 @@ const PICK = [
   "FocalLength",
   "FocalLengthIn35mmFormat",
   "Orientation",
+  "GPSLatitude",
+  "GPSLongitude",
 ] as const;
 
 function toISO(v: unknown): string | undefined {
@@ -57,6 +67,8 @@ export async function extractExif(buf: Buffer): Promise<NormalizedExif | null> {
       translateValues: false,
     })) as Record<string, unknown> | null;
     if (!raw) return null;
+    const lat = toNumber(raw.GPSLatitude);
+    const lon = toNumber(raw.GPSLongitude);
     const exif: NormalizedExif = {
       shotAt: toISO(raw.DateTimeOriginal),
       make: cleanString(raw.Make),
@@ -68,6 +80,9 @@ export async function extractExif(buf: Buffer): Promise<NormalizedExif | null> {
       focalLength: toNumber(raw.FocalLength),
       focalLength35: toNumber(raw.FocalLengthIn35mmFormat),
       orientation: toNumber(raw.Orientation),
+      ...(isFinite(lat!) && isFinite(lon!) && (lat !== 0 || lon !== 0)
+        ? { gps: { lat: lat!, lon: lon! } }
+        : {}),
     };
     const hasAny = Object.values(exif).some((v) => v !== undefined);
     return hasAny ? exif : null;

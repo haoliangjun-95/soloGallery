@@ -98,6 +98,8 @@ export interface ExifCardInput {
 export interface ExifLine {
   label: string;
   value: string;
+  /** hover 提示（如位置行的完整坐标） */
+  title?: string;
 }
 
 export function buildExifLines(input: ExifCardInput): ExifLine[] {

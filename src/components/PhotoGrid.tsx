@@ -10,13 +10,14 @@ import {
   formatFileSize,
   formatShotDateShort,
 } from "@/lib/exif-format";
+import { formatGps, gpsLabel } from "@/lib/geo";
 import type { PhotoCardDTO } from "@/lib/types";
 
 interface Props {
   initialItems: PhotoCardDTO[];
   total: number;
   pageSize: number;
-  query?: { category?: string; tag?: string };
+  query?: { category?: string; tag?: string; year?: number };
 }
 
 export default function PhotoGrid({ initialItems, total, pageSize, query }: Props) {
@@ -37,6 +38,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, query }: Prop
       const params = new URLSearchParams({ page: String(next) });
       if (query?.category) params.set("category", query.category);
       if (query?.tag) params.set("tag", query.tag);
+      if (query?.year) params.set("year", String(query.year));
       const res = await fetch(`/api/photos?${params.toString()}`);
       if (!res.ok) throw new Error("加载失败");
       const data = (await res.json()) as { items: PhotoCardDTO[]; total: number };
@@ -93,10 +95,17 @@ export default function PhotoGrid({ initialItems, total, pageSize, query }: Prop
 /** 单张卡片：图 + 收藏星标 + 标题/分类/标签/拍摄信息（参考用户给的样图布局）。 */
 function PhotoCard({ photo }: { photo: PhotoCardDTO }) {
   const exif = photo.exif;
-  const meta: { icon: React.ReactNode; text: string }[] = [];
+  const meta: { icon: React.ReactNode; text: string; title?: string }[] = [];
 
   const date = formatShotDateShort(photo.shotAt ?? exif?.shotAt);
   if (date) meta.push({ icon: <IconCalendar />, text: date });
+  if (exif?.gps) {
+    meta.push({
+      icon: <IconPin />,
+      text: gpsLabel(exif.gps),
+      title: formatGps(exif.gps),
+    });
+  }
 
   const cameraBits = [
     formatCamera(exif?.make, exif?.model),
@@ -179,7 +188,7 @@ function PhotoCard({ photo }: { photo: PhotoCardDTO }) {
             {meta.map((row, i) => (
               <li key={i} className="flex items-start gap-1.5 text-xs text-muted min-w-0">
                 <span className="shrink-0 mt-[2px] opacity-70">{row.icon}</span>
-                <span className="truncate" title={row.text}>
+                <span className="truncate" title={row.title ?? row.text}>
                   {row.text}
                 </span>
               </li>
@@ -188,6 +197,15 @@ function PhotoCard({ photo }: { photo: PhotoCardDTO }) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+function IconPin() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
   );
 }
 

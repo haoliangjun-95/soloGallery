@@ -18,6 +18,7 @@ export interface ListOptions {
   pageSize?: number;
   categorySlug?: string;
   tag?: string;
+  year?: number;
   publishedOnly?: boolean;
   includeMissing?: boolean;
 }
@@ -88,6 +89,14 @@ export async function listPhotos(options: ListOptions = {}): Promise<{ items: Ph
     ...(options.includeMissing ? {} : { missing: false }),
     ...(options.categorySlug ? { category: { slug: options.categorySlug } } : {}),
     ...(options.tag ? { photoTags: { some: { tag: { name: options.tag } } } } : {}),
+    ...(options.year
+      ? {
+          shotAt: {
+            gte: new Date(options.year, 0, 1),
+            lt: new Date(options.year + 1, 0, 1),
+          },
+        }
+      : {}),
   };
   const [rows, total] = await Promise.all([
     prisma.photo.findMany({
@@ -203,6 +212,18 @@ export async function listTags(publishedOnly = true): Promise<TagDTO[]> {
     },
   });
   return rows.map((r) => ({ id: r.id, name: r.name, count: r._count.photoTags }));
+}
+
+/** 年份分组（按拍摄时间，仅公开图），倒序：[{year: 2026, count: 12}, ...]。 */
+export async function listYears(): Promise<{ year: number; count: number }[]> {
+  const rows = await prisma.$queryRaw<Array<{ year: number; count: bigint }>>`
+    SELECT YEAR(shotAt) AS year, COUNT(*) AS count
+    FROM Photo
+    WHERE shotAt IS NOT NULL AND published = 1 AND missing = 0
+    GROUP BY YEAR(shotAt)
+    ORDER BY year DESC
+  `;
+  return rows.map((r) => ({ year: Number(r.year), count: Number(r.count) }));
 }
 
 export async function listCommentsAdmin(status?: "PENDING" | "APPROVED" | "SPAM"): Promise<CommentAdminDTO[]> {

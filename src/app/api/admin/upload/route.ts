@@ -4,6 +4,7 @@ import { badRequest, guardAdmin, json } from "@/lib/api";
 import { displayKey, originalKey } from "@/lib/bucket-layout";
 import { prisma } from "@/lib/db";
 import { extractExif } from "@/lib/exif";
+import { reverseGeocode } from "@/lib/geo";
 import { generateDisplay } from "@/lib/image-pipeline";
 import { putBuffer } from "@/lib/s3";
 import { sniffImage } from "@/lib/sniff";
@@ -45,6 +46,10 @@ export async function POST(request: NextRequest) {
       }
 
       const exif = await extractExif(buf);
+      if (exif?.gps) {
+        const location = await reverseGeocode(exif.gps);
+        if (location) exif.gps.location = location;
+      }
       let width: number | undefined;
       let height: number | undefined;
       let webp: Buffer | null = null;
