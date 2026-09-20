@@ -39,13 +39,12 @@ export async function reverseGeocode(gps: GeoPoint, signal?: AbortSignal): Promi
     if (!res.ok) return undefined;
     const data = (await res.json()) as { address?: Record<string, string> };
     const a = data.address ?? {};
-    // 从具体到宽泛取有意义的中文段落
-    const parts = [
-      a.city || a.town || a.village || a.municipality || a.suburb,
-      a.state || a.province || a.county,
-      a.country,
-    ].filter((s): s is string => Boolean(s && s.trim()));
-    const label = parts.join(" ");
+    // 目标格式「贵阳 / 南明区」：市 / 区县 两级、斜杠分隔，缺失时逐级回退
+    const district = a.suburb || a.city_district || a.district || a.county || a.town || a.village;
+    const city = a.city || a.municipality || a.state || a.province;
+    const parts = [city, district].filter((s): s is string => Boolean(s && s.trim()));
+    if (parts.length === 2 && parts[0] === parts[1]) parts.pop();
+    const label = parts.join(" / ");
     return label.trim() ? label : undefined;
   } catch {
     return undefined;

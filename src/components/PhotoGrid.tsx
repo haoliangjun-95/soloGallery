@@ -9,6 +9,7 @@ import {
   formatExposure,
   formatFileSize,
   formatShotDateShort,
+  formatShotYear,
 } from "@/lib/exif-format";
 import { formatGps, gpsLabel } from "@/lib/geo";
 import type { PhotoCardDTO } from "@/lib/types";
@@ -99,13 +100,6 @@ function PhotoCard({ photo }: { photo: PhotoCardDTO }) {
 
   const date = formatShotDateShort(photo.shotAt ?? exif?.shotAt);
   if (date) meta.push({ icon: <IconCalendar />, text: date });
-  if (exif?.gps) {
-    meta.push({
-      icon: <IconPin />,
-      text: gpsLabel(exif.gps),
-      title: formatGps(exif.gps),
-    });
-  }
 
   const cameraBits = [
     formatCamera(exif?.make, exif?.model),
@@ -128,7 +122,19 @@ function PhotoCard({ photo }: { photo: PhotoCardDTO }) {
   ].filter(Boolean);
   if (fileBits.length) meta.push({ icon: <IconImage />, text: fileBits.join(", ") });
 
-  if (photo.fileName) meta.push({ icon: <IconFile />, text: photo.fileName });
+  if (photo.fileName) {
+    if (exif?.gps) {
+      // 文件名行左侧带地名与年份：📍 贵阳 / 南明区 / 2026 · 1C9A8682.jpg
+      const year = formatShotYear(photo.shotAt ?? exif.shotAt);
+      meta.push({
+        icon: <IconPin />,
+        text: [gpsLabel(exif.gps), year].filter(Boolean).join(" / ") + " · " + photo.fileName,
+        title: formatGps(exif.gps),
+      });
+    } else {
+      meta.push({ icon: <IconFile />, text: photo.fileName });
+    }
+  }
 
   return (
     <div className="mb-3 break-inside-avoid rounded-xl overflow-hidden bg-card border border-edge transition-transform hover:-translate-y-0.5">

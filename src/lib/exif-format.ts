@@ -26,6 +26,14 @@ export function formatShotDateShort(iso: string | undefined): string | null {
   return `${get("year")}年${get("month")}月${get("day")}日 ${get("weekday")}`;
 }
 
+/** 照片年份（拍摄时区）：2026 */
+export function formatShotYear(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("en", { timeZone: TZ, year: "numeric" }).format(d);
+}
+
 export function formatShotDate(iso: string | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
