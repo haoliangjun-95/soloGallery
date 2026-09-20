@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     tag: sp.get("tag") ?? undefined,
     year: Number.isInteger(year) && year > 1970 && year < 9999 ? year : undefined,
     q: sp.get("q") ?? undefined,
+    favorite: sp.get("fav") === "1",
   });
   return json(result);
 }

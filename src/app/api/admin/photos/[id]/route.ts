@@ -38,6 +38,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
   const data: Record<string, unknown> = {};
   if (typeof body.published === "boolean") data.published = body.published;
+  if (typeof body.favorite === "boolean") data.favorite = body.favorite;
   if (typeof body.title === "string") data.title = body.title.slice(0, 255);
   if (typeof body.description === "string") data.description = body.description.slice(0, 5000);
   if (body.categoryId === null) data.categoryId = null;

@@ -6,7 +6,15 @@ import { deleteKey } from "@/lib/s3";
 
 export const runtime = "nodejs";
 
-type BatchAction = "publish" | "unpublish" | "delete" | "setCategory" | "addTags" | "removeTags";
+type BatchAction =
+  | "publish"
+  | "unpublish"
+  | "favorite"
+  | "unfavorite"
+  | "delete"
+  | "setCategory"
+  | "addTags"
+  | "removeTags";
 
 export async function POST(request: NextRequest) {
   const denied = await guardAdmin();
@@ -25,6 +33,12 @@ export async function POST(request: NextRequest) {
       break;
     case "unpublish":
       await prisma.photo.updateMany({ where: { id: { in: photoIds } }, data: { published: false } });
+      break;
+    case "favorite":
+      await prisma.photo.updateMany({ where: { id: { in: photoIds } }, data: { favorite: true } });
+      break;
+    case "unfavorite":
+      await prisma.photo.updateMany({ where: { id: { in: photoIds } }, data: { favorite: false } });
       break;
     case "delete": {
       const photos = await prisma.photo.findMany({ where: { id: { in: photoIds } }, select: { sha1: true } });

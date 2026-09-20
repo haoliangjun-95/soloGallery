@@ -18,7 +18,7 @@ interface Props {
   initialItems: PhotoCardDTO[];
   total: number;
   pageSize: number;
-  query?: { category?: string; tag?: string; year?: number; q?: string };
+  query?: { category?: string; tag?: string; year?: number; q?: string; fav?: boolean };
 }
 
 export default function PhotoGrid({ initialItems, total, pageSize, query }: Props) {
@@ -41,6 +41,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, query }: Prop
       if (query?.tag) params.set("tag", query.tag);
       if (query?.year) params.set("year", String(query.year));
       if (query?.q) params.set("q", query.q);
+      if (query?.fav) params.set("fav", "1");
       const res = await fetch(`/api/photos?${params.toString()}`);
       if (!res.ok) throw new Error("加载失败");
       const data = (await res.json()) as { items: PhotoCardDTO[]; total: number };
@@ -80,7 +81,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, query }: Prop
 
   return (
     <div>
-      <div className="columns-2 sm:columns-3 lg:columns-4 gap-3 [column-fill:_balance]">
+      <div className="columns-2 sm:columns-3 2xl:columns-4 gap-3 [column-fill:_balance]">
         {items.map((photo) => (
           <PhotoCard key={photo.sha1} photo={photo} />
         ))}

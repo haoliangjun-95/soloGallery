@@ -72,6 +72,7 @@ model Photo {
   coverOf     Category?   @relation("CategoryCover")
   published   Boolean     @default(false)
   missing     Boolean     @default(false)
+  favorite    Boolean     @default(false)
   shotAt      DateTime?
   exif        Json?
   wallpaperSnapshot Json?

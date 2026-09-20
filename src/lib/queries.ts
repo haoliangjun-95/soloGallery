@@ -21,6 +21,8 @@ export interface ListOptions {
   year?: number;
   /** 按名称搜索（标题/文件名，不区分大小写包含匹配） */
   q?: string;
+  /** 仅看收藏 */
+  favorite?: boolean;
   publishedOnly?: boolean;
   includeMissing?: boolean;
 }
@@ -38,13 +40,13 @@ type CardSource = {
   shotAt: Date | null;
   exif: unknown;
   wallpaperSnapshot: unknown;
+  favorite: boolean;
   category: { name: string; slug: string } | null;
   photoTags: { tag: { name: string } }[];
 };
 
 function toCard(p: CardSource): PhotoCardDTO {
   const display = displayKey(p.sha1);
-  const snapshot = p.wallpaperSnapshot as { favorite?: boolean } | null;
   return {
     id: p.id,
     sha1: p.sha1,
@@ -60,7 +62,7 @@ function toCard(p: CardSource): PhotoCardDTO {
     exif: (p.exif as PhotoCardDTO["exif"]) ?? null,
     category: p.category,
     tags: p.photoTags.map((pt) => pt.tag.name).sort(),
-    favorite: Boolean(snapshot?.favorite),
+    favorite: p.favorite,
   };
 }
 
@@ -78,6 +80,7 @@ const CARD_SELECT = {
   shotAt: true,
   exif: true,
   wallpaperSnapshot: true,
+  favorite: true,
   category: { select: { name: true, slug: true } },
   photoTags: { select: { tag: { select: { name: true } } } },
 } as const;
@@ -101,6 +104,7 @@ export async function listPhotos(options: ListOptions = {}): Promise<{ items: Ph
         }
       : {}),
     ...(q ? { OR: [{ title: { contains: q } }, { fileName: { contains: q } }] } : {}),
+    ...(options.favorite ? { favorite: true } : {}),
   };
   const [rows, total] = await Promise.all([
     prisma.photo.findMany({
@@ -216,6 +220,11 @@ export async function listTags(publishedOnly = true): Promise<TagDTO[]> {
     },
   });
   return rows.map((r) => ({ id: r.id, name: r.name, count: r._count.photoTags }));
+}
+
+/** 收藏数（侧栏入口用，仅公开图）。 */
+export async function countFavorites(): Promise<number> {
+  return prisma.photo.count({ where: { published: true, missing: false, favorite: true } });
 }
 
 /** 年份分组（按拍摄时间，仅公开图），倒序：[{year: 2026, count: 12}, ...]。 */

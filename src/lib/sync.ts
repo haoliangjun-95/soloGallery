@@ -196,6 +196,7 @@ async function importPhoto(
       height: height ?? null,
       thumbKey: thumbKey ?? null,
       categoryId,
+      favorite: item.favorite,
       published: autoPublish,
       shotAt: exif?.shotAt ? new Date(exif.shotAt) : null,
       exif: exif ? (exif as unknown as object) : undefined,
@@ -297,7 +298,7 @@ export async function runSync(trigger: "manual" | "cron"): Promise<SyncSummary> 
 
     const dbPhotos = await prisma.photo.findMany({
       where: { source: "SYNC" },
-      select: { id: true, sha1: true, published: true, missing: true, fileName: true },
+      select: { id: true, sha1: true, published: true, missing: true, fileName: true, favorite: true },
     });
     const dbByHash = new Map(dbPhotos.map((p) => [p.sha1, p]));
     const aliveHashes = new Set(alive.map((a) => a.hash));
@@ -353,13 +354,17 @@ export async function runSync(trigger: "manual" | "cron"): Promise<SyncSummary> 
         }
       }
       if (photo.missing) touched = true;
+      // 收藏 OR 语义：库值或 manifest 归并值任一为真即为真，只升不降——
+      // 画廊侧手动收藏不会被壁纸端同步冲掉，反之亦然（与壁纸软件 CRDT 的取或一致）
+      const favoriteUp = item.favorite && !photo.favorite;
       const fillName = !photo.fileName && item.fileName ? ensureExt(item.fileName, "jpg", item.hash) : undefined;
-      if (touched || fillName) {
+      if (touched || fillName || favoriteUp) {
         await prisma.photo.update({
           where: { id: photo.id },
           data: {
             ...(photo.missing ? { missing: false } : {}),
             ...(fillName ? { fileName: fillName } : {}),
+            ...(favoriteUp ? { favorite: true } : {}),
           },
         });
         updated++;

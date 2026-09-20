@@ -89,6 +89,12 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
             <ToolbarButton disabled={busy} onClick={() => batch("unpublish")}>
               隐藏
             </ToolbarButton>
+            <ToolbarButton disabled={busy} onClick={() => batch("favorite")}>
+              ★ 收藏
+            </ToolbarButton>
+            <ToolbarButton disabled={busy} onClick={() => batch("unfavorite")}>
+              取消收藏
+            </ToolbarButton>
             <ToolbarButton disabled={busy} onClick={addTagToSelection}>
               加标签
             </ToolbarButton>
@@ -139,7 +145,16 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
             <label className="absolute top-2 left-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs cursor-pointer">
               <input type="checkbox" checked={selected.has(photo.id)} onChange={() => toggle(photo.id)} />
             </label>
-            <div className="absolute top-2 right-2">
+            <div className="absolute top-2 right-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => patchPhoto(photo.id, { favorite: !photo.favorite })}
+                disabled={busy}
+                title={photo.favorite ? "已收藏，点击取消" : "点击收藏"}
+                className={`leading-none ${photo.favorite ? "text-amber-400" : "text-white/50 hover:text-amber-300"} disabled:opacity-40`}
+              >
+                ★
+              </button>
               <input
                 type="checkbox"
                 role="switch"
