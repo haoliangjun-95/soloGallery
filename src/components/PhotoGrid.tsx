@@ -81,7 +81,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, query }: Prop
 
   return (
     <div>
-      <div className="columns-2 sm:columns-3 2xl:columns-4 gap-3 [column-fill:_balance]">
+      <div className="columns-2 sm:columns-3 xl:columns-4 2xl:columns-5 min-[2800px]:columns-6 gap-3 lg:gap-4 [column-fill:_balance]">
         {items.map((photo) => (
           <PhotoCard key={photo.sha1} photo={photo} />
         ))}

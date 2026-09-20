@@ -9,7 +9,7 @@ export default async function SiteLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="min-h-dvh flex flex-col">
       <header className="sticky top-0 z-20 backdrop-blur bg-background/80 border-b border-edge">
-        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
+        <div className="w-full px-4 lg:px-6 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
             <Link href="/" className="text-lg font-semibold tracking-wide hover:opacity-80 shrink-0">
               {settings?.siteTitle ?? "soloGallery"}

@@ -42,7 +42,7 @@ export default async function HomePage({ searchParams }: Props) {
   };
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 py-6 lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-6">
+    <div className="w-full px-4 py-6 lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-6 lg:px-6">
       <Sidebar
         categories={categories}
         tags={tags}

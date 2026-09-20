@@ -34,7 +34,7 @@ export default async function PhotoPage({ params }: PageProps<"/photo/[sha1]">) 
   const showOriginalEntry = originalView || admin;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
+    <div className="w-full max-w-[1900px] mx-auto px-4 py-6 lg:px-6">
       {admin && !row.published ? (
         <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">
           该图片{row.missing ? "源已缺失且" : ""}未发布，仅管理员可见 ·{" "}
@@ -44,7 +44,7 @@ export default async function PhotoPage({ params }: PageProps<"/photo/[sha1]">) 
         </div>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] items-start">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_420px] items-start">
         <div>
           <ZoomableImage src={zoomSrc} alt={photo.title} />
           {showOriginalEntry ? (
