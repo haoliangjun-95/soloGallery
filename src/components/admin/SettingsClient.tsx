@@ -28,6 +28,9 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [pwd, setPwd] = useState({ current: "", next: "", confirm: "" });
+  const [pwdBusy, setPwdBusy] = useState(false);
+  const [pwdMessage, setPwdMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function uploadLogo(file: File) {
     setLogoBusy(true);
@@ -77,8 +80,34 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
     }
   }
 
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwdMessage(null);
+    if (pwd.next !== pwd.confirm) {
+      setPwdMessage({ ok: false, text: "两次输入的新密码不一致" });
+      return;
+    }
+    setPwdBusy(true);
+    try {
+      const res = await fetch("/api/admin/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: pwd.current, newPassword: pwd.next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "修改失败");
+      setPwd({ current: "", next: "", confirm: "" });
+      setPwdMessage({ ok: true, text: "密码已更新" });
+    } catch (err) {
+      setPwdMessage({ ok: false, text: err instanceof Error ? err.message : "修改失败" });
+    } finally {
+      setPwdBusy(false);
+    }
+  }
+
   return (
-    <form onSubmit={save} className="max-w-md space-y-5">
+    <div className="max-w-md">
+      <form onSubmit={save} className="space-y-5">
       <div className="text-sm space-y-2">
         <span className="text-muted">站点 Logo（显示在站点名称左侧）</span>
         <div className="flex items-center gap-3">
@@ -206,6 +235,65 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
         </button>
         {message ? <span className="text-sm text-muted">{message}</span> : null}
       </div>
-    </form>
+      </form>
+
+      <section className="mt-10 border-t border-edge pt-6">
+        <h2 className="mb-1 text-sm font-medium">修改密码</h2>
+        <p className="mb-4 text-xs text-muted">修改后当前登录保持有效，下次登录请使用新密码</p>
+        <form onSubmit={changePassword} className="space-y-3">
+          <label className="block text-sm space-y-1">
+            <span className="text-muted">当前密码</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              required
+              value={pwd.current}
+              onChange={(e) => setPwd({ ...pwd, current: e.target.value })}
+              className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm outline-none focus:border-foreground/40"
+            />
+          </label>
+          <label className="block text-sm space-y-1">
+            <span className="text-muted">新密码（8-72 位）</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={8}
+              maxLength={72}
+              value={pwd.next}
+              onChange={(e) => setPwd({ ...pwd, next: e.target.value })}
+              className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm outline-none focus:border-foreground/40"
+            />
+          </label>
+          <label className="block text-sm space-y-1">
+            <span className="text-muted">确认新密码</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={8}
+              maxLength={72}
+              value={pwd.confirm}
+              onChange={(e) => setPwd({ ...pwd, confirm: e.target.value })}
+              className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm outline-none focus:border-foreground/40"
+            />
+          </label>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={pwdBusy}
+              className="rounded-lg border border-edge px-4 py-2 text-sm font-medium hover:bg-foreground/5 disabled:opacity-40"
+            >
+              {pwdBusy ? "提交中…" : "更新密码"}
+            </button>
+            {pwdMessage ? (
+              <span className={`text-sm ${pwdMessage.ok ? "text-emerald-400" : "text-red-400"}`}>
+                {pwdMessage.text}
+              </span>
+            ) : null}
+          </div>
+        </form>
+      </section>
+    </div>
   );
 }

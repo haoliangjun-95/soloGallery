@@ -53,6 +53,24 @@ export async function logout() {
   session.destroy();
 }
 
+/** 已登录管理员修改自己的密码：校验当前密码后更新哈希。 */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await getSession();
+  if (!session.username || !session.id) return { ok: false, error: "未登录" };
+  const user = await prisma.adminUser.findUnique({ where: { id: session.id } });
+  if (!user || user.username !== session.username) return { ok: false, error: "账号不存在" };
+  const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!ok) return { ok: false, error: "当前密码不正确" };
+  await prisma.adminUser.update({
+    where: { id: user.id },
+    data: { passwordHash: await bcrypt.hash(newPassword, 10) },
+  });
+  return { ok: true };
+}
+
 /** 首次启动兜底：库里没有管理员时按环境变量创建（seed 脚本也会做）。 */
 export async function ensureAdminUser(): Promise<void> {
   const count = await prisma.adminUser.count();
