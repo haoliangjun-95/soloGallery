@@ -1,5 +1,5 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { getIronSession } from "iron-session";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
@@ -9,7 +9,7 @@ export interface SessionData {
   username?: string;
 }
 
-function sessionOptions() {
+function sessionOptions(secure: boolean) {
   const password = process.env.SESSION_SECRET;
   if (!password || password.length < 32) {
     throw new Error("SESSION_SECRET 未设置或不足 32 字符");
@@ -21,14 +21,18 @@ function sessionOptions() {
     cookieOptions: {
       httpOnly: true,
       sameSite: "lax" as const,
-      secure: process.env.NODE_ENV === "production",
+      // Secure cookie 只在 HTTPS 下发：直连 http://IP:3000 时浏览器会拒收，
+      // 否则登录成功但会话存不住，出现「正确密码却弹回登录页」。
+      secure,
     },
   };
 }
 
 export async function getSession() {
   const cookieStore = await cookies();
-  return getIronSession<SessionData>(cookieStore, sessionOptions());
+  // 反代终止 TLS 时，上游 socket 永远是 http，须以 x-forwarded-proto 为准
+  const forwardedProto = (await headers()).get("x-forwarded-proto")?.split(",")[0]?.trim();
+  return getIronSession<SessionData>(cookieStore, sessionOptions(forwardedProto === "https"));
 }
 
 export async function isAdmin(): Promise<boolean> {
