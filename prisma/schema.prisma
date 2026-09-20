@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum PhotoSource {
+  SYNC
+  UPLOAD
+}
+
+enum CommentStatus {
+  PENDING
+  APPROVED
+  SPAM
+}
+
+enum SyncStatus {
+  RUNNING
+  DONE
+  ERROR
+}
+
+model AdminUser {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique @db.VarChar(64)
+  passwordHash String   @db.VarChar(255)
+  createdAt    DateTime @default(now())
+}
+
+model Setting {
+  key   String @id @db.VarChar(64)
+  value String @db.VarChar(512)
+}
+
+model Category {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique @db.VarChar(128)
+  slug         String   @unique @db.VarChar(128)
+  sortOrder    Int      @default(0)
+  coverPhotoId Int?      @unique
+  coverPhoto   Photo?   @relation("CategoryCover", fields: [coverPhotoId], references: [id], onDelete: SetNull)
+  photos       Photo[]  @relation("PhotoCategory")
+  createdAt    DateTime @default(now())
+}
+
+model Tag {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique @db.VarChar(64)
+  photoTags PhotoTag[] @relation("PhotoTagTag")
+}
+
+model Photo {
+  id          Int         @id @default(autoincrement())
+  sha1        String      @unique @db.VarChar(40)
+  source      PhotoSource @default(SYNC)
+  title       String      @db.VarChar(255)
+  description String?     @db.Text
+  fileName    String      @db.VarChar(255)
+  storageKey  String      @db.VarChar(255)
+  mimeType    String      @db.VarChar(64)
+  format      String      @db.VarChar(16)
+  fileSize    BigInt
+  width       Int?
+  height      Int?
+  thumbKey    String?     @db.VarChar(255)
+  categoryId  Int?
+  category    Category?   @relation("PhotoCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  coverOf     Category?   @relation("CategoryCover")
+  published   Boolean     @default(false)
+  missing     Boolean     @default(false)
+  shotAt      DateTime?
+  exif        Json?
+  wallpaperSnapshot Json?
+  photoTags    PhotoTag[]   @relation("PhotoTagPhoto")
+  comments    Comment[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([published, createdAt])
+  @@index([categoryId])
+}
+
+model PhotoTag {
+  photoId Int
+  tagId   Int
+  photo   Photo @relation("PhotoTagPhoto", fields: [photoId], references: [id], onDelete: Cascade)
+  tag     Tag   @relation("PhotoTagTag", fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([photoId, tagId])
+  @@index([tagId])
+}
+
+model Comment {
+  id           Int            @id @default(autoincrement())
+  photoId      Int
+  photo        Photo          @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  nickname     String         @db.VarChar(64)
+  email        String?        @db.VarChar(255)
+  content      String         @db.Text
+  adminReply   String?        @db.Text
+  adminReplyAt DateTime?
+  status       CommentStatus  @default(PENDING)
+  ip           String?        @db.VarChar(64)
+  createdAt    DateTime       @default(now())
+
+  @@index([photoId, status])
+}
+
+model SyncRun {
+  id           Int        @id @default(autoincrement())
+  status       SyncStatus
+  trigger      String     @db.VarChar(16)
+  startedAt    DateTime   @default(now())
+  finishedAt   DateTime?
+  newCount     Int        @default(0)
+  updatedCount Int        @default(0)
+  missingCount Int        @default(0)
+  skippedCount Int        @default(0)
+  processed    Int        @default(0)
+  total        Int        @default(0)
+  error        String?    @db.Text
+}
