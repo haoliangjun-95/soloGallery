@@ -18,8 +18,8 @@ interface Props {
   initialItems: PhotoCardDTO[];
   total: number;
   pageSize: number;
-  /** normal：瀑布流 + 信息卡；square：正方形纯图拼接 */
-  view?: "normal" | "square";
+  /** normal：瀑布+信息卡；square：正方形纯图；masonry：瀑布纯图；large：双列大图；list：列表 */
+  view?: "normal" | "square" | "masonry" | "large" | "list";
   query?: { category?: string; tag?: string; year?: number; q?: string; fav?: boolean };
 }
 
@@ -106,6 +106,74 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
               ) : null}
             </Link>
           ))}
+        </div>
+      ) : view === "masonry" ? (
+        <div className="columns-2 sm:columns-3 xl:columns-4 2xl:columns-5 min-[2800px]:columns-6 gap-3 lg:gap-4 [column-fill:_balance]">
+          {items.map((photo) => (
+            <Link
+              key={photo.sha1}
+              href={`/photo/${photo.sha1}`}
+              className="group relative mb-3 lg:mb-4 block break-inside-avoid overflow-hidden rounded-xl border border-edge"
+            >
+              <img
+                src={photo.thumbUrl}
+                alt={photo.title}
+                loading="lazy"
+                decoding="async"
+                className="w-full h-auto block transition-transform duration-200 group-hover:scale-[1.02]"
+              />
+              {photo.favorite ? (
+                <span className="absolute left-2 top-2 text-amber-400 drop-shadow-[0_1px_2px_rgba(0,0,0,.8)]">★</span>
+              ) : null}
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <p className="text-sm text-white truncate">{photo.title}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      ) : view === "large" ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 min-[2200px]:grid-cols-3 gap-4 lg:gap-5">
+          {items.map((photo) => (
+            <PhotoCard key={photo.sha1} photo={photo} />
+          ))}
+        </div>
+      ) : view === "list" ? (
+        <div className="divide-y divide-edge rounded-xl border border-edge bg-card overflow-hidden">
+          {items.map((photo) => {
+            const exif = photo.exif;
+            const date = formatShotDateShort(photo.shotAt ?? exif?.shotAt);
+            const camera = formatCamera(exif?.make, exif?.model);
+            return (
+              <Link
+                key={photo.sha1}
+                href={`/photo/${photo.sha1}`}
+                className="flex items-center gap-4 p-3 hover:bg-foreground/5 transition-colors"
+              >
+                <img
+                  src={photo.thumbUrl}
+                  alt={photo.title}
+                  loading="lazy"
+                  decoding="async"
+                  className="h-20 w-32 object-cover rounded-lg shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate">{photo.title}</p>
+                  {date || camera ? (
+                    <p className="text-xs text-muted truncate mt-0.5">
+                      {[date, camera].filter(Boolean).join(" · ")}
+                    </p>
+                  ) : null}
+                  <p className="text-xs text-muted/70 truncate mt-0.5">{photo.fileName}</p>
+                </div>
+                {photo.category ? (
+                  <span className="hidden sm:inline rounded border border-edge px-1.5 py-0.5 text-[11px] text-muted shrink-0">
+                    {photo.category.name}
+                  </span>
+                ) : null}
+                {photo.favorite ? <span className="text-amber-400 shrink-0">★</span> : null}
+              </Link>
+            );
+          })}
         </div>
       ) : (
         <div className="columns-2 sm:columns-3 xl:columns-4 2xl:columns-5 min-[2800px]:columns-6 gap-3 lg:gap-4 [column-fill:_balance]">
