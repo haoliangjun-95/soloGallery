@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { DISPLAY_TZ } from "@/lib/time";
 import type { CommentDTO } from "@/lib/types";
 
 const NICKNAME_KEY = "solog_comment_nickname";
@@ -154,7 +155,7 @@ export default function CommentSection({
 function formatTime(iso: string): string {
   const d = new Date(iso);
   return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
+    timeZone: DISPLAY_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
