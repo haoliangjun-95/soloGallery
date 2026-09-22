@@ -24,7 +24,8 @@ import { sniffImage } from "../src/lib/sniff";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
-const srcArg = args.find((a) => a.startsWith("--src="))?.slice(6) ?? args[args.indexOf("--src") + 1];
+const srcIndex = args.indexOf("--src");
+const srcArg = args.find((a) => a.startsWith("--src="))?.slice(6) ?? (srcIndex !== -1 ? args[srcIndex + 1] : undefined);
 const concArg = Number(args.find((a) => a.startsWith("--concurrency="))?.slice(14) ?? 4);
 
 const SRC = srcArg ?? "/www/photoprism/photos";
