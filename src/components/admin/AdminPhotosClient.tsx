@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { errorMessage, responseError } from "@/lib/fetch-error";
 import type { AdminPhotoDTO, CategoryDTO } from "@/lib/types";
+import { ConfirmDialog, PromptDialog } from "./ConfirmDialog";
 
 interface Props {
   items: AdminPhotoDTO[];
@@ -18,6 +20,9 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<AdminPhotoDTO | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [tagPrompt, setTagPrompt] = useState(false);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -32,13 +37,21 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
 
   async function patchPhoto(id: number, data: Record<string, unknown>) {
     setBusy(true);
+    setError(null);
     try {
-      await fetch(`/api/admin/photos/${id}`, {
+      const res = await fetch(`/api/admin/photos/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+      // 之前无论成败都只 refresh，失败时开关会静默弹回原状，用户以为是自己点错了
+      if (!res.ok) {
+        setError(await responseError(res));
+        return;
+      }
       router.refresh();
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -46,27 +59,25 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
 
   async function batch(action: string, extra: Record<string, unknown> = {}) {
     if (!selected.size || busy) return;
-    if (action === "delete" && !confirm(`确认删除选中的 ${selected.size} 张图片？（仅删除画廊记录和 display 变体）`))
-      return;
     setBusy(true);
+    setError(null);
     try {
-      await fetch("/api/admin/photos/batch", {
+      const res = await fetch("/api/admin/photos/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: [...selected], action, ...extra }),
       });
+      if (!res.ok) {
+        setError(await responseError(res));
+        return;
+      }
       setSelected(new Set());
       router.refresh();
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
-  }
-
-  async function addTagToSelection() {
-    const input = prompt("输入要给选中图片添加的标签（逗号分隔）");
-    if (!input) return;
-    const tags = input.split(/[,，]/).map((t) => t.trim()).filter(Boolean);
-    if (tags.length) await batch("addTags", { tags });
   }
 
   async function moveCategory(categoryId: number | null) {
@@ -95,7 +106,7 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
             <ToolbarButton disabled={busy} onClick={() => batch("unfavorite")}>
               取消收藏
             </ToolbarButton>
-            <ToolbarButton disabled={busy} onClick={addTagToSelection}>
+            <ToolbarButton disabled={busy} onClick={() => setTagPrompt(true)}>
               加标签
             </ToolbarButton>
             <select
@@ -119,12 +130,21 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
                 </option>
               ))}
             </select>
-            <ToolbarButton danger disabled={busy} onClick={() => batch("delete")}>
+            <ToolbarButton danger disabled={busy} onClick={() => setConfirmDelete(true)}>
               删除
             </ToolbarButton>
           </>
         ) : null}
       </div>
+
+      {error ? (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <span className="flex-1">{error}</span>
+          <button type="button" onClick={() => setError(null)} className="leading-none hover:text-red-200" aria-label="关闭提示">
+            ×
+          </button>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
         {items.map((photo) => (
@@ -208,6 +228,29 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
       ) : null}
 
       {editing ? <EditModal photo={editing} categories={categories} onClose={() => setEditing(null)} /> : null}
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          message={`确认删除选中的 ${selected.size} 张图片？（仅删除画廊记录和 display 变体）`}
+          confirmLabel="删除"
+          danger
+          onConfirm={() => batch("delete")}
+          onClose={() => setConfirmDelete(false)}
+        />
+      ) : null}
+
+      {tagPrompt ? (
+        <PromptDialog
+          label="输入要给选中图片添加的标签（逗号分隔）"
+          placeholder="风景, 城市"
+          submitLabel="添加"
+          onSubmit={async (input) => {
+            const tags = input.split(/[,，]/).map((t) => t.trim()).filter(Boolean);
+            if (tags.length) await batch("addTags", { tags });
+          }}
+          onClose={() => setTagPrompt(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -267,17 +310,28 @@ function EditModal({
   const [tags, setTags] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // 详情字段（描述/标签/分类 id）需从服务端取
   useEffect(() => {
     let cancelled = false;
     void fetch(`/api/admin/photos/${photo.id}`)
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (!r.ok) {
+          // 取不到详情时要说明，否则描述/标签空白会被当成「本来就没填」
+          if (!cancelled) setError(await responseError(r, "无法读取图片详情"));
+          return null;
+        }
+        return r.json();
+      })
       .then((d) => {
         if (cancelled || !d) return;
         setDescription(d.description ?? "");
         setTags((d.tags ?? []).join(", "));
         setCategoryId(d.categoryId !== null && d.categoryId !== undefined ? String(d.categoryId) : "");
+      })
+      .catch((err) => {
+        if (!cancelled) setError(errorMessage(err));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -289,8 +343,9 @@ function EditModal({
 
   async function save() {
     setSaving(true);
+    setError(null);
     try {
-      await fetch(`/api/admin/photos/${photo.id}`, {
+      const res = await fetch(`/api/admin/photos/${photo.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -300,8 +355,15 @@ function EditModal({
           tags: tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean),
         }),
       });
+      // 失败时保持弹窗打开并提示，避免用户以为已保存
+      if (!res.ok) {
+        setError(await responseError(res));
+        return;
+      }
       onClose();
       router.refresh();
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -367,6 +429,9 @@ function EditModal({
             className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm outline-none focus:border-foreground/40"
           />
         </label>
+        {error ? (
+          <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</p>
+        ) : null}
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-lg border border-edge px-4 py-2 text-sm text-muted hover:text-foreground">
             取消

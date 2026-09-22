@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { DISPLAY_TZ } from "@/lib/time";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface SyncRunDTO {
   id: number;
@@ -28,6 +30,7 @@ export default function SyncClient() {
   const [runs, setRuns] = useState<SyncRunDTO[]>([]);
   const [missing, setMissing] = useState<MissingPhoto[]>([]);
   const [triggering, setTriggering] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<MissingPhoto | null>(null);
 
   const refresh = useCallback(async () => {
     const res = await fetch("/api/admin/sync");
@@ -88,11 +91,7 @@ export default function SyncClient() {
                 <button
                   type="button"
                   className="text-xs text-muted hover:text-red-400"
-                  onClick={async () => {
-                    if (!confirm("从画廊删除该记录？")) return;
-                    await fetch(`/api/admin/photos/${m.id}`, { method: "DELETE" });
-                    void refresh();
-                  }}
+                  onClick={() => setPendingDelete(m)}
                 >
                   删除记录
                 </button>
@@ -123,7 +122,7 @@ export default function SyncClient() {
                 <tr key={r.id} className="border-b border-edge last:border-0">
                   <td className="px-3 py-2 whitespace-nowrap">
                     {new Intl.DateTimeFormat("zh-CN", {
-                      timeZone: "Asia/Shanghai",
+                      timeZone: DISPLAY_TZ,
                       month: "2-digit",
                       day: "2-digit",
                       hour: "2-digit",
@@ -165,6 +164,19 @@ export default function SyncClient() {
           </table>
         </div>
       </section>
+
+      {pendingDelete ? (
+        <ConfirmDialog
+          message={`从画廊删除记录「${pendingDelete.title || pendingDelete.fileName}」？桶里的原图不受影响。`}
+          confirmLabel="删除记录"
+          danger
+          onConfirm={async () => {
+            await fetch(`/api/admin/photos/${pendingDelete.id}`, { method: "DELETE" });
+            await refresh();
+          }}
+          onClose={() => setPendingDelete(null)}
+        />
+      ) : null}
     </div>
   );
 }

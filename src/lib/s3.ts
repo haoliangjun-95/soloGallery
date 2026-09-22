@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -87,6 +88,5 @@ export async function presignGet(
 }
 
 export async function deleteKey(key: string): Promise<void> {
-  const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
   await s3.send(new DeleteObjectCommand({ Bucket: bucket(), Key: key }));
 }

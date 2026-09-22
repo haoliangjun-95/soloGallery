@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { badRequest, guardAdmin, json } from "@/lib/api";
+import { badRequest, guardAdmin, isPrismaNotFound, json } from "@/lib/api";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -25,8 +25,13 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   }
   if (!Object.keys(data).length) return badRequest("无可更新字段");
 
-  const comment = await prisma.comment.update({ where: { id: commentId }, data });
-  return json({ ok: true, comment: { id: comment.id, status: comment.status } });
+  try {
+    const comment = await prisma.comment.update({ where: { id: commentId }, data });
+    return json({ ok: true, comment: { id: comment.id, status: comment.status } });
+  } catch (err) {
+    if (isPrismaNotFound(err)) return json({ error: "评论不存在" }, 404);
+    throw err;
+  }
 }
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
@@ -35,6 +40,11 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
   const { id } = await params;
   const commentId = Number(id);
   if (!Number.isInteger(commentId)) return badRequest("非法 id");
-  await prisma.comment.delete({ where: { id: commentId } });
+  try {
+    await prisma.comment.delete({ where: { id: commentId } });
+  } catch (err) {
+    if (isPrismaNotFound(err)) return json({ error: "评论不存在" }, 404);
+    throw err;
+  }
   return json({ ok: true });
 }

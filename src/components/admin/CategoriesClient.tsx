@@ -2,26 +2,38 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { errorMessage, responseError } from "@/lib/fetch-error";
 import type { CategoryDTO } from "@/lib/types";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export default function CategoriesClient({ initial }: { initial: CategoryDTO[] }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState<Record<number, string>>({});
+  const [pendingRemove, setPendingRemove] = useState<CategoryDTO | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || busy) return;
     setBusy(true);
+    setError(null);
     try {
-      await fetch("/api/admin/categories", {
+      const res = await fetch("/api/admin/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() }),
       });
+      // 重名等 400 场景原来只清空输入框，看起来像添加成功了
+      if (!res.ok) {
+        setError(await responseError(res));
+        return;
+      }
       setName("");
       router.refresh();
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -30,19 +42,36 @@ export default function CategoriesClient({ initial }: { initial: CategoryDTO[] }
   async function rename(id: number) {
     const newName = renaming[id]?.trim();
     if (!newName) return;
-    await fetch(`/api/admin/categories/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName }),
-    });
-    setRenaming((prev) => ({ ...prev, [id]: "" }));
-    router.refresh();
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/categories/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!res.ok) {
+        setError(await responseError(res));
+        return;
+      }
+      setRenaming((prev) => ({ ...prev, [id]: "" }));
+      router.refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
-  async function remove(id: number, name: string) {
-    if (!confirm(`确认删除分类「${name}」？分类下的图片不会被删除（变为无分类）。`)) return;
-    await fetch(`/api/admin/categories/${id}`, { method: "DELETE" });
-    router.refresh();
+  async function remove(id: number) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/categories/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setError(await responseError(res));
+        return;
+      }
+      router.refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
   return (
@@ -63,6 +92,15 @@ export default function CategoriesClient({ initial }: { initial: CategoryDTO[] }
         </button>
       </form>
 
+      {error ? (
+        <div className="flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <span className="flex-1">{error}</span>
+          <button type="button" onClick={() => setError(null)} className="leading-none hover:text-red-200" aria-label="关闭提示">
+            ×
+          </button>
+        </div>
+      ) : null}
+
       <ul className="divide-y divide-edge">
         {initial.map((c) => (
           <li key={c.id} className="flex items-center gap-3 py-3 text-sm">
@@ -82,13 +120,23 @@ export default function CategoriesClient({ initial }: { initial: CategoryDTO[] }
             >
               保存
             </button>
-            <button type="button" onClick={() => remove(c.id, c.name)} className="text-red-400 hover:text-red-300">
+            <button type="button" onClick={() => setPendingRemove(c)} className="text-red-400 hover:text-red-300">
               删除
             </button>
           </li>
         ))}
         {initial.length === 0 ? <li className="py-6 text-sm text-muted">暂无分类</li> : null}
       </ul>
+
+      {pendingRemove ? (
+        <ConfirmDialog
+          message={`确认删除分类「${pendingRemove.name}」？分类下的图片不会被删除（变为无分类）。`}
+          confirmLabel="删除"
+          danger
+          onConfirm={() => remove(pendingRemove.id)}
+          onClose={() => setPendingRemove(null)}
+        />
+      ) : null}
     </div>
   );
 }

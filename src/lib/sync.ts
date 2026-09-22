@@ -3,10 +3,13 @@ import { prisma } from "./db";
 import { extractExif } from "./exif";
 import { reverseGeocode } from "./geo";
 import { generateDisplay } from "./image-pipeline";
+import { createLogger } from "./logger";
 import { mergeManifests, parseManifest, type ManifestSnapshot, type MergedItem } from "./manifest";
 import { exists, getBuffer, listKeys, putBuffer } from "./s3";
 import { sniffImage } from "./sniff";
 import { getSettings } from "./settings";
+
+const logger = createLogger("sync");
 
 /** ------------------------------------------------------------------
  * 同步引擎：壁纸软件写桶（objects/ + thumbs/ + manifests/），
@@ -56,7 +59,7 @@ export async function loadLatestManifests(): Promise<{ snapshots: ManifestSnapsh
       const { images, categories, tombstones } = parseManifest(json);
       snapshots.push({ deviceId, ts, images, categories, tombstones });
     } catch (err) {
-      console.warn(`[sync] manifest 解析失败 ${key}:`, err instanceof Error ? err.message : err);
+      logger.warn(`manifest 解析失败 ${key}`, err);
     }
   }
   return { snapshots, keys: keys.length };
@@ -165,7 +168,7 @@ async function importPhoto(
     height = result.height;
   } catch (err) {
     // HEIC 解码等失败：入库但无 display（详情页回退原图）
-    console.warn(`[sync] display 生成失败 ${hash}:`, err instanceof Error ? err.message : err);
+    logger.warn(`display 生成失败 ${hash}`, err);
   }
 
   const dKey = displayKey(hash);
@@ -331,7 +334,7 @@ export async function runSync(trigger: "manual" | "cron"): Promise<SyncSummary> 
         else if (outcome.skipped) skipped++;
       } catch (err) {
         const msg = `${item.hash}: ${err instanceof Error ? err.message : String(err)}`;
-        console.warn("[sync] 导入失败", msg);
+        logger.warn("导入失败", msg);
         if (errors.length < 50) errors.push(msg);
       }
     });
@@ -409,7 +412,7 @@ export async function runSync(trigger: "manual" | "cron"): Promise<SyncSummary> 
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[sync] 同步失败:", msg);
+    logger.error("同步失败", msg);
     return fail(msg);
   } finally {
     globalForSync.__sologSyncing = false;
@@ -428,12 +431,12 @@ export async function syncTick(): Promise<void> {
     if (due) {
       const summary = await runSync("cron");
       if (summary.imported || summary.missing || summary.errors.length) {
-        console.log(
-          `[sync][cron] 新增 ${summary.imported} 更新 ${summary.updated} 下架 ${summary.missing} 跳过 ${summary.skipped}`,
+        logger.info(
+          `cron 新增 ${summary.imported} 更新 ${summary.updated} 下架 ${summary.missing} 跳过 ${summary.skipped}`,
         );
       }
     }
   } catch (err) {
-    console.warn("[sync][cron] tick 失败:", err instanceof Error ? err.message : err);
+    logger.warn("cron tick 失败", err);
   }
 }

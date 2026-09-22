@@ -1,3 +1,5 @@
+import { createLogger } from "./lib/logger";
+
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   if (process.env.SYNC_ENABLED === "false") return;
@@ -11,5 +13,5 @@ export async function register() {
   cron.schedule("* * * * *", () => {
     void syncTick();
   });
-  console.log("[sologallery] 定时同步已启动（每分钟检查，间隔由设置控制）");
+  createLogger("sync").info("定时同步已启动（每分钟检查，间隔由设置控制）");
 }

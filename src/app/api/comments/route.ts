@@ -2,11 +2,14 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { badRequest, json } from "@/lib/api";
 import { prisma } from "@/lib/db";
+import { createLogger } from "@/lib/logger";
 import { clientIp, rateAllow } from "@/lib/ratelimit";
 import { checkSpam } from "@/lib/spam";
 import { getSettings } from "@/lib/settings";
 
 export const runtime = "nodejs";
+
+const logger = createLogger("comment");
 
 const schema = z.object({
   photoId: z.number().int().positive(),
@@ -56,7 +59,7 @@ export async function POST(request: NextRequest) {
         ip,
       },
     });
-    console.warn(`[comment] 已拦截(reason=${verdict.reason}) ip=${ip} nick=${parsed.data.nickname}`);
+    logger.warn(`已拦截(reason=${verdict.reason}) ip=${ip} nick=${parsed.data.nickname}`);
     return json({ ok: true, moderated: false, message: "评论成功" });
   }
 

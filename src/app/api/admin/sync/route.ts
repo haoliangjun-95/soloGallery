@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { guardAdmin, json } from "@/lib/api";
 import { prisma } from "@/lib/db";
+import { createLogger } from "@/lib/logger";
 import { runSync } from "@/lib/sync";
 
 export const runtime = "nodejs";
+
+const logger = createLogger("sync");
 
 /** 手动触发同步：后台执行，前端轮询 GET 获取进度。 */
 export async function POST() {
   const denied = await guardAdmin();
   if (denied) return denied;
-  void runSync("manual").catch((err) => console.error("[sync][manual]", err));
+  void runSync("manual").catch((err) => logger.error("manual 触发失败", err));
   return json({ started: true });
 }
 

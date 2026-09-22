@@ -28,8 +28,15 @@ function getWordRegex(): RegExp {
   return wordRegex;
 }
 
+/** \u5e26 /g\uff1a\u7528\u4e8e match \u53d6\u51fa\u5168\u90e8\u94fe\u63a5 */
 const URL_RE = /(https?:\/\/|www\.)[^\s]{2,}/gi;
-const EMOJI_ONLY_RE = /^[\p{Extended_Pictographic}\p{Script=Han}\s\u200d\ufe0f]+$/u;
+/**
+ * \u540c\u6a21\u5f0f\u7684\u65e0\u72b6\u6001\u526f\u672c\uff1a\u5e26 /g \u7684\u6b63\u5219 .test() \u4f1a\u63a8\u8fdb lastIndex\uff0c
+ * \u590d\u7528\u540c\u4e00\u4e2a\u5bf9\u8c61\u505a\u5224\u5b9a\u4f1a\u51fa\u73b0\u300c\u9694\u4e00\u6b21\u624d\u547d\u4e2d\u300d\u7684\u6f0f\u5224\u3002
+ */
+const URL_TEST_RE = /(https?:\/\/|www\.)[^\s]{2,}/i;
+/** \u7eaf\u8868\u60c5\u5224\u5b9a\u4e0d\u542b\u6c49\u5b57\u7c7b\uff1a\u628a\u4e2d\u6587\u7b97\u8fdb\u6765\u4f1a\u8ba9\u6b63\u5e38\u4e2d\u6587\u8bc4\u8bba\u88ab\u8bef\u5224\u4e3a\u300c\u7eaf\u8868\u60c5\u300d */
+const EMOJI_ONLY_RE = /^[\p{Extended_Pictographic}\s\u200d\ufe0f]+$/u;
 
 export interface SpamInput {
   nickname: string;
@@ -83,12 +90,13 @@ export function checkSpam(input: SpamInput): SpamVerdict {
     return { spam: true, reason: "links" };
   }
   // 昵称里塞链接/联系方式
-  if (URL_RE.test(nickname) || /(?:微信|vx|v信|qq|tg|telegram)[:：\s]*[a-z0-9_-]{5,}/i.test(nickname)) {
+  if (URL_TEST_RE.test(nickname) || /(?:微信|vx|v信|qq|tg|telegram)[:：\s]*[a-z0-9_-]{5,}/i.test(nickname)) {
     return { spam: true, reason: "nickname" };
   }
 
   // 3) 纯表情/无意义刷屏
-  if (content.length >= 6 && EMOJI_ONLY_RE.test(content) && !/\p{Script=Han}{2,}/u.test(content) && !/[a-z]{3,}/i.test(content)) {
+  // EMOJI_ONLY_RE 已排除汉字与字母，无需再叠加反向判断
+  if (content.length >= 6 && EMOJI_ONLY_RE.test(content)) {
     return { spam: true, reason: "emoji-only" };
   }
 

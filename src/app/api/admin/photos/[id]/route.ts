@@ -1,10 +1,13 @@
 import { NextRequest } from "next/server";
-import { badRequest, guardAdmin, json } from "@/lib/api";
+import { badRequest, guardAdmin, isPrismaNotFound, json } from "@/lib/api";
 import { displayKey } from "@/lib/bucket-layout";
 import { prisma } from "@/lib/db";
+import { createLogger } from "@/lib/logger";
 import { deleteKey } from "@/lib/s3";
 
 export const runtime = "nodejs";
+
+const logger = createLogger("photo");
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -51,19 +54,24 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       .map((t: string) => t.trim().slice(0, 64));
   }
 
-  const photo = await prisma.$transaction(async (tx) => {
-    const updated = await tx.photo.update({ where: { id: photoId }, data });
-    if (tagsReplace) {
-      await tx.photoTag.deleteMany({ where: { photoId } });
-      for (const name of tagsReplace) {
-        const tag = await tx.tag.upsert({ where: { name }, update: {}, create: { name } });
-        await tx.photoTag.create({ data: { photoId, tagId: tag.id } });
+  try {
+    const photo = await prisma.$transaction(async (tx) => {
+      const updated = await tx.photo.update({ where: { id: photoId }, data });
+      if (tagsReplace) {
+        await tx.photoTag.deleteMany({ where: { photoId } });
+        for (const name of tagsReplace) {
+          const tag = await tx.tag.upsert({ where: { name }, update: {}, create: { name } });
+          await tx.photoTag.create({ data: { photoId, tagId: tag.id } });
+        }
       }
-    }
-    return updated;
-  });
-
-  return json({ ok: true, photo: { id: photo.id, published: photo.published, title: photo.title } });
+      return updated;
+    });
+    return json({ ok: true, photo: { id: photo.id, published: photo.published, title: photo.title } });
+  } catch (err) {
+    // 目标图片已被其他人删除：返回 404 让前端刷新列表，而不是 500
+    if (isPrismaNotFound(err)) return json({ error: "图片不存在" }, 404);
+    throw err;
+  }
 }
 
 export async function DELETE(request: NextRequest, { params }: Params) {
@@ -77,12 +85,16 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   const photo = await prisma.photo.findUnique({ where: { id: photoId } });
   if (!photo) return json({ ok: true, deleted: false });
 
-  await prisma.photo.delete({ where: { id: photoId } });
+  try {
+    await prisma.photo.delete({ where: { id: photoId } });
+  } catch (err) {
+    // findUnique 与 delete 之间被并发删掉：视为已删除，幂等返回
+    if (isPrismaNotFound(err)) return json({ ok: true, deleted: false });
+    throw err;
+  }
 
   // 画廊资产：display 一定清理；原图/缩略图属壁纸软件，仅 UPLOAD 来源且明确要求 purge 时删原图
-  await deleteKey(displayKey(photo.sha1)).catch((err) =>
-    console.warn("[photo] 删除 display 失败:", err instanceof Error ? err.message : err),
-  );
+  await deleteKey(displayKey(photo.sha1)).catch((err) => logger.warn("删除 display 失败", err));
   if (purge && photo.source === "UPLOAD") {
     await deleteKey(photo.storageKey).catch(() => undefined);
   }

@@ -3,40 +3,68 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { errorMessage, responseError } from "@/lib/fetch-error";
+import { DISPLAY_TZ } from "@/lib/time";
 import type { CommentAdminDTO } from "@/lib/types";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export default function CommentsClient({ initial }: { initial: CommentAdminDTO[] }) {
   const router = useRouter();
   const [replies, setReplies] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingRemoveId, setPendingRemoveId] = useState<number | null>(null);
 
   async function patch(id: number, data: Record<string, unknown>) {
     setBusy(true);
+    setError(null);
     try {
-      await fetch(`/api/admin/comments/${id}`, {
+      const res = await fetch(`/api/admin/comments/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+      // 失败时原来只 refresh，界面毫无变化，用户会反复点同一个按钮
+      if (!res.ok) {
+        setError(await responseError(res));
+        return;
+      }
       router.refresh();
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
   }
 
   async function remove(id: number) {
-    if (!confirm("确认删除该评论？")) return;
     setBusy(true);
+    setError(null);
     try {
-      await fetch(`/api/admin/comments/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/comments/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setError(await responseError(res));
+        return;
+      }
       router.refresh();
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <ul className="space-y-4">
+    <>
+      {error ? (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <span className="flex-1">{error}</span>
+          <button type="button" onClick={() => setError(null)} className="leading-none hover:text-red-200" aria-label="关闭提示">
+            ×
+          </button>
+        </div>
+      ) : null}
+      <ul className="space-y-4">
       {initial.map((c) => (
         <li key={c.id} className="rounded-xl border border-edge bg-card p-4">
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -46,7 +74,7 @@ export default function CommentsClient({ initial }: { initial: CommentAdminDTO[]
             <span className="text-xs text-muted">
               ·{" "}
               {new Intl.DateTimeFormat("zh-CN", {
-                timeZone: "Asia/Shanghai",
+                timeZone: DISPLAY_TZ,
                 month: "2-digit",
                 day: "2-digit",
                 hour: "2-digit",
@@ -117,7 +145,7 @@ export default function CommentsClient({ initial }: { initial: CommentAdminDTO[]
             <button
               type="button"
               disabled={busy}
-              onClick={() => remove(c.id)}
+              onClick={() => setPendingRemoveId(c.id)}
               className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-30"
             >
               删除
@@ -125,7 +153,18 @@ export default function CommentsClient({ initial }: { initial: CommentAdminDTO[]
           </div>
         </li>
       ))}
-      {initial.length === 0 ? <li className="py-10 text-center text-sm text-muted">没有评论</li> : null}
-    </ul>
+        {initial.length === 0 ? <li className="py-10 text-center text-sm text-muted">没有评论</li> : null}
+      </ul>
+
+      {pendingRemoveId !== null ? (
+        <ConfirmDialog
+          message="确认删除该评论？删除后无法恢复。"
+          confirmLabel="删除"
+          danger
+          onConfirm={() => remove(pendingRemoveId)}
+          onClose={() => setPendingRemoveId(null)}
+        />
+      ) : null}
+    </>
   );
 }

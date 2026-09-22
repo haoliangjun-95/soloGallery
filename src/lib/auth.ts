@@ -75,12 +75,32 @@ export async function changePassword(
   return { ok: true };
 }
 
-/** 首次启动兜底：库里没有管理员时按环境变量创建（seed 脚本也会做）。 */
+/** 管理员初始化失败（配置缺失）——与「数据库不可用」区分，便于路由层给出可执行提示。 */
+export class AdminBootstrapError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AdminBootstrapError";
+  }
+}
+
+/** ADMIN_PASSWORD 最小长度 */
+const MIN_ADMIN_PASSWORD_LENGTH = 8;
+
+/**
+ * 首次启动兜底：库里没有管理员时按环境变量创建（seed 脚本也会做）。
+ * 不再回落到硬编码弱密码 —— 未配置 ADMIN_PASSWORD 时拒绝创建，
+ * 否则公网部署会留下人人皆知的默认账号。
+ */
 export async function ensureAdminUser(): Promise<void> {
   const count = await prisma.adminUser.count();
   if (count > 0) return;
   const username = process.env.ADMIN_USERNAME ?? "admin";
-  const password = process.env.ADMIN_PASSWORD ?? "admin123456";
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password || password.length < MIN_ADMIN_PASSWORD_LENGTH) {
+    throw new AdminBootstrapError(
+      `尚未初始化管理员：请设置环境变量 ADMIN_PASSWORD（至少 ${MIN_ADMIN_PASSWORD_LENGTH} 位）后重启，或执行 npm run db:seed`,
+    );
+  }
   await prisma.adminUser.create({
     data: { username, passwordHash: await bcrypt.hash(password, 10) },
   });

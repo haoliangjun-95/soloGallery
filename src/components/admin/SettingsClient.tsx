@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { errorMessage, responseError } from "@/lib/fetch-error";
 
 interface SettingsShape {
   siteTitle: string;
@@ -25,6 +26,7 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
   });
   const [logo, setLogo] = useState(initial.siteLogo);
   const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -34,16 +36,21 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
 
   async function uploadLogo(file: File) {
     setLogoBusy(true);
+    setLogoError(null);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch("/api/admin/logo", { method: "POST", body: form });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "上传失败");
-      setLogo(data.logo);
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/admin/logo", { method: "POST", body });
+      // 原来用原生 alert，风格不统一且会阻塞；改成表单内提示
+      if (!res.ok) {
+        setLogoError(await responseError(res, "上传失败"));
+        return;
+      }
+      const data = (await res.json()) as { logo?: string };
+      setLogo(data.logo ?? "");
       router.refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "上传失败");
+      setLogoError(errorMessage(err));
     } finally {
       setLogoBusy(false);
     }
@@ -51,10 +58,17 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
 
   async function removeLogo() {
     setLogoBusy(true);
+    setLogoError(null);
     try {
-      await fetch("/api/admin/logo", { method: "DELETE" });
+      const res = await fetch("/api/admin/logo", { method: "DELETE" });
+      if (!res.ok) {
+        setLogoError(await responseError(res, "移除失败"));
+        return;
+      }
       setLogo("");
       router.refresh();
+    } catch (err) {
+      setLogoError(errorMessage(err));
     } finally {
       setLogoBusy(false);
     }
@@ -150,6 +164,9 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
             }}
           />
         </div>
+        {logoError ? (
+          <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{logoError}</p>
+        ) : null}
       </div>
 
       <label className="block text-sm space-y-1">
