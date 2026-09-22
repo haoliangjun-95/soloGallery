@@ -18,7 +18,7 @@ interface Props {
   initialItems: PhotoCardDTO[];
   total: number;
   pageSize: number;
-  /** normal：瀑布+信息卡；square：正方形纯图；fixed：固定 3:4 统一卡片+信息卡；masonry：瀑布纯图；list：列表 */
+  /** normal：瀑布+信息卡；square：正方形纯图；fixed：统一正方形卡片+信息卡（cover 裁切）；masonry：瀑布纯图；list：列表 */
   view?: "normal" | "square" | "fixed" | "masonry" | "list";
   query?: { category?: string; tag?: string; year?: number; q?: string; fav?: boolean; month?: string };
 }

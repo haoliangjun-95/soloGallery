@@ -67,6 +67,8 @@ export default async function HomePage({ searchParams }: Props) {
     if (merged.year) params.set("year", merged.year);
     if (merged.q) params.set("q", merged.q);
     if (merged.fav) params.set("fav", "1");
+    // 透传当前视图，点筛选 chip 不重置视图；calendar 是月份文件夹特殊模式，不透传（点 chip 即退出）
+    if (sp.view && sp.view !== "calendar") params.set("view", sp.view);
     const s = params.toString();
     return s ? `/?${s}` : "/";
   };
