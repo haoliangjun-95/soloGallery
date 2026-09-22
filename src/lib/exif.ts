@@ -34,8 +34,6 @@ const PICK = [
   "FocalLength",
   "FocalLengthIn35mmFormat",
   "Orientation",
-  "GPSLatitude",
-  "GPSLongitude",
 ] as const;
 
 function toISO(v: unknown): string | undefined {
@@ -62,26 +60,33 @@ function toNumber(v: unknown): number | undefined {
 
 export async function extractExif(buf: Buffer): Promise<NormalizedExif | null> {
   try {
-    const raw = (await exifr.parse(buf, {
-      pick: [...PICK],
-      translateValues: false,
-    })) as Record<string, unknown> | null;
-    if (!raw) return null;
-    const lat = toNumber(raw.GPSLatitude);
-    const lon = toNumber(raw.GPSLongitude);
+    // GPS 必须走 exifr.gps()：pick GPSLatitude/GPSLongitude 拿到的是度分秒有理数数组
+    // （如 [22,32,12.3]），不是十进制数，此前据此判空导致 GPS 从未提取成功。
+    const [raw, gps] = await Promise.all([
+      exifr.parse(buf, {
+        pick: [...PICK],
+        translateValues: false,
+      }) as Promise<Record<string, unknown> | null>,
+      exifr.gps(buf) as Promise<{ latitude: number; longitude: number } | undefined>,
+    ]);
+    if (!raw && !gps) return null;
+    const r = raw ?? {};
     const exif: NormalizedExif = {
-      shotAt: toISO(raw.DateTimeOriginal),
-      make: cleanString(raw.Make),
-      model: cleanString(raw.Model),
-      lensModel: cleanString(raw.LensModel),
-      iso: toNumber(raw.ISO ?? raw.ISOSpeedRatings),
-      exposureTime: toNumber(raw.ExposureTime),
-      fNumber: toNumber(raw.FNumber),
-      focalLength: toNumber(raw.FocalLength),
-      focalLength35: toNumber(raw.FocalLengthIn35mmFormat),
-      orientation: toNumber(raw.Orientation),
-      ...(isFinite(lat!) && isFinite(lon!) && (lat !== 0 || lon !== 0)
-        ? { gps: { lat: lat!, lon: lon! } }
+      shotAt: toISO(r.DateTimeOriginal),
+      make: cleanString(r.Make),
+      model: cleanString(r.Model),
+      lensModel: cleanString(r.LensModel),
+      iso: toNumber(r.ISO ?? r.ISOSpeedRatings),
+      exposureTime: toNumber(r.ExposureTime),
+      fNumber: toNumber(r.FNumber),
+      focalLength: toNumber(r.FocalLength),
+      focalLength35: toNumber(r.FocalLengthIn35mmFormat),
+      orientation: toNumber(r.Orientation),
+      ...(gps &&
+      isFinite(gps.latitude) &&
+      isFinite(gps.longitude) &&
+      (gps.latitude !== 0 || gps.longitude !== 0)
+        ? { gps: { lat: gps.latitude, lon: gps.longitude } }
         : {}),
     };
     const hasAny = Object.values(exif).some((v) => v !== undefined);
