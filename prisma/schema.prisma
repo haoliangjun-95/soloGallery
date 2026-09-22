@@ -82,6 +82,8 @@ model Photo {
   updatedAt   DateTime    @updatedAt
 
   @@index([published, createdAt])
+  // 前台列表与日历都按 shotAt 倒序取已发布图，缺这条索引会全表扫描 + filesort
+  @@index([published, shotAt])
   @@index([categoryId])
 }
 

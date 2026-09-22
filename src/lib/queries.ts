@@ -3,6 +3,7 @@ import { displayKey, originalKey } from "./bucket-layout";
 import { publicUrl } from "./config";
 import { prisma } from "./db";
 import { getSettings } from "./settings";
+import { DISPLAY_UTC_OFFSET, displayMonthKey, monthBounds, yearBounds } from "./time";
 import type {
   AdminPhotoDTO,
   CategoryDTO,
@@ -92,30 +93,16 @@ export async function listPhotos(options: ListOptions = {}): Promise<{ items: Ph
   const page = Math.max(1, options.page ?? 1);
   const pageSize = Math.min(96, Math.max(1, options.pageSize ?? (Number(settings.pageSize) || 24)));
   const q = options.q?.trim().slice(0, 64);
-  const monthMatch = /^(\d{4})-(\d{2})$/.exec(options.month ?? "");
-  // 月份边界按展示时区 Asia/Shanghai（+08:00）计算，与日历分组一致
-  const my = monthMatch ? Number(monthMatch[1]) : 0;
-  const mm = monthMatch ? Number(monthMatch[2]) : 0;
-  const monthStart = monthMatch ? new Date(`${monthMatch[1]}-${monthMatch[2]}-01T00:00:00+08:00`) : undefined;
-  const monthEnd = monthMatch
-    ? new Date(
-        `${mm === 12 ? my + 1 : my}-${String(mm === 12 ? 1 : mm + 1).padStart(2, "0")}-01T00:00:00+08:00`,
-      )
-    : undefined;
+  // 年/月边界统一走展示时区（lib/time），与日历分组、月份列表保持同一套换算
+  const month = options.month ? monthBounds(options.month) : null;
+  const year = options.year ? yearBounds(options.year) : null;
   const where = {
     ...(options.publishedOnly === false ? {} : { published: true }),
     ...(options.includeMissing ? {} : { missing: false }),
     ...(options.categorySlug ? { category: { slug: options.categorySlug } } : {}),
     ...(options.tag ? { photoTags: { some: { tag: { name: options.tag } } } } : {}),
-    ...(options.year
-      ? {
-          shotAt: {
-            gte: new Date(options.year, 0, 1),
-            lt: new Date(options.year + 1, 0, 1),
-          },
-        }
-      : {}),
-    ...(monthStart && monthEnd ? { shotAt: { gte: monthStart, lt: monthEnd } } : {}),
+    ...(year ? { shotAt: { gte: year.gte, lt: year.lt } } : {}),
+    ...(month ? { shotAt: { gte: month.gte, lt: month.lt } } : {}),
     ...(q ? { OR: [{ title: { contains: q } }, { fileName: { contains: q } }] } : {}),
     ...(options.favorite ? { favorite: true } : {}),
   };
@@ -145,14 +132,12 @@ export async function listPhotosAdmin(
   const page = Math.max(1, options.page ?? 1);
   const pageSize = Math.min(96, Math.max(1, options.pageSize ?? (Number(settings.pageSize) || 24)));
   const q = options.q?.trim().slice(0, 64);
-  const year = options.year && Number.isInteger(options.year) ? options.year : undefined;
+  const year = options.year && Number.isInteger(options.year) ? yearBounds(options.year) : null;
   const where = {
     ...(options.categorySlug ? { category: { slug: options.categorySlug } } : {}),
     ...(options.tag ? { photoTags: { some: { tag: { name: options.tag } } } } : {}),
     ...(q ? { OR: [{ title: { contains: q } }, { fileName: { contains: q } }] } : {}),
-    ...(year
-      ? { shotAt: { gte: new Date(year, 0, 1), lt: new Date(year + 1, 0, 1) } }
-      : {}),
+    ...(year ? { shotAt: { gte: year.gte, lt: year.lt } } : {}),
     ...(options.favorite ? { favorite: true } : {}),
     ...(options.status === "published"
       ? { published: true, missing: false }
@@ -268,8 +253,10 @@ export interface MonthGroup {
 export async function listMonths(publishedOnly = true): Promise<{ ym: string; count: number }[]> {
   const { Prisma } = await import("@/generated/prisma/client");
   const cond = publishedOnly ? Prisma.sql`AND published = 1 AND missing = 0` : Prisma.empty;
+  // shotAt 存的是 UTC，先转展示时区再取月份，否则东八区凌晨的照片会落到上一个月。
+  // 用字面量偏移（非 'Asia/Shanghai'）以免依赖 MySQL 时区表是否导入。
   const rows = await prisma.$queryRaw<Array<{ ym: string; count: bigint }>>`
-    SELECT DATE_FORMAT(shotAt, '%Y-%m') AS ym, COUNT(*) AS count
+    SELECT DATE_FORMAT(CONVERT_TZ(shotAt, '+00:00', ${DISPLAY_UTC_OFFSET}), '%Y-%m') AS ym, COUNT(*) AS count
     FROM Photo
     WHERE shotAt IS NOT NULL ${cond}
     GROUP BY ym
@@ -278,23 +265,22 @@ export async function listMonths(publishedOnly = true): Promise<{ ym: string; co
   return rows.map((r) => ({ ym: r.ym, count: Number(r.count) }));
 }
 
-/** 日历视图全量轻量数据（已发布，按拍摄时间倒序），JS 侧按月分组。 */
+/** 日历视图单次最多加载的照片数：无上限会随库增长拖垮首屏与内存 */
+const CALENDAR_MAX_PHOTOS = 20000;
+
+/** 日历视图轻量数据（已发布，按拍摄时间倒序，上限 CALENDAR_MAX_PHOTOS），JS 侧按月分组。 */
 export async function listPhotosCalendar(): Promise<MonthGroup[]> {
   const rows = await prisma.photo.findMany({
     where: { published: true, missing: false },
     orderBy: [{ shotAt: "desc" }, { createdAt: "desc" }],
+    take: CALENDAR_MAX_PHOTOS,
     select: { sha1: true, thumbKey: true, title: true, favorite: true, shotAt: true },
   });
   const groups = new Map<string, MonthGroup>();
-  const monthFmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-  });
   for (const r of rows) {
     if (!r.shotAt) continue;
-    // 按展示时区（Asia/Shanghai）分月，en-CA 输出 YYYY-MM
-    const key = monthFmt.format(r.shotAt).replaceAll("/", "-");
+    // 按展示时区分月，与 listMonths 的 CONVERT_TZ 分组保持一致
+    const key = displayMonthKey(r.shotAt);
     let g = groups.get(key);
     if (!g) {
       g = {
@@ -321,11 +307,12 @@ export async function listPhotosCalendar(): Promise<MonthGroup[]> {
 export async function listYears(publishedOnly = true): Promise<{ year: number; count: number }[]> {
   const { Prisma } = await import("@/generated/prisma/client");
   const cond = publishedOnly ? Prisma.sql`AND published = 1 AND missing = 0` : Prisma.empty;
+  // 同 listMonths：年份也按展示时区归属，跨年零点的照片才不会和筛选结果打架
   const rows = await prisma.$queryRaw<Array<{ year: number; count: bigint }>>`
-    SELECT YEAR(shotAt) AS year, COUNT(*) AS count
+    SELECT YEAR(CONVERT_TZ(shotAt, '+00:00', ${DISPLAY_UTC_OFFSET})) AS year, COUNT(*) AS count
     FROM Photo
     WHERE shotAt IS NOT NULL ${cond}
-    GROUP BY YEAR(shotAt)
+    GROUP BY year
     ORDER BY year DESC
   `;
   return rows.map((r) => ({ year: Number(r.year), count: Number(r.count) }));

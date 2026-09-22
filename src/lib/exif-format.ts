@@ -1,4 +1,5 @@
 import type { NormalizedExif } from "./exif";
+import { DISPLAY_TZ } from "./time";
 
 /** 纯格式化函数 —— 详情页 EXIF 卡对齐目标样例：
  *  2026 年 2 月 12 日 周四 GMT+8 15:55
@@ -8,15 +9,13 @@ import type { NormalizedExif } from "./exif";
  *  1C9A9846.jpg
  */
 
-const TZ = "Asia/Shanghai";
-
 /** 列表卡片用的短日期：2026年5月4日 周一 */
 export function formatShotDateShort(iso: string | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (isNaN(d.getTime())) return null;
   const parts = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: TZ,
+    timeZone: DISPLAY_TZ,
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -31,7 +30,7 @@ export function formatShotYear(iso: string | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat("en", { timeZone: TZ, year: "numeric" }).format(d);
+  return new Intl.DateTimeFormat("en", { timeZone: DISPLAY_TZ, year: "numeric" }).format(d);
 }
 
 export function formatShotDate(iso: string | undefined): string | null {
@@ -39,7 +38,7 @@ export function formatShotDate(iso: string | undefined): string | null {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return null;
   const parts = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: TZ,
+    timeZone: DISPLAY_TZ,
     year: "numeric",
     month: "long",
     day: "numeric",
