@@ -18,8 +18,9 @@ export function gpsLabel(gps: GeoPoint): string {
 }
 
 /**
- * Nominatim(OSM) 反查地名，限速 1 req/s。失败/无结果返回 undefined，
- * 展示回退坐标格式。结果由调用方缓存在 exif.gps.location，不重复请求。
+ * Photon(komoot, OSM 数据) 反查地名，限速 1 req/s。
+ * 曾用 Nominatim，但国内服务器到 nominatim.openstreetmap.org 不可达（反查全部失败）。
+ * 失败/无结果返回 undefined，展示回退坐标格式。结果由调用方缓存在 exif.gps.location，不重复请求。
  */
 let lastRequestAt = 0;
 
@@ -31,17 +32,19 @@ export async function reverseGeocode(gps: GeoPoint, signal?: AbortSignal): Promi
   lastRequestAt = Date.now();
 
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=14&accept-language=zh-CN&lat=${gps.lat}&lon=${gps.lon}`;
+    const url = `https://photon.komoot.io/reverse?lat=${gps.lat}&lon=${gps.lon}&limit=1`;
     const res = await fetch(url, {
-      signal,
+      signal: signal ?? AbortSignal.timeout(8000),
       headers: { "User-Agent": "soloGallery/1.0 (personal photo gallery)" },
     });
     if (!res.ok) return undefined;
-    const data = (await res.json()) as { address?: Record<string, string> };
-    const a = data.address ?? {};
-    // 目标格式「贵阳 / 南明区」：市 / 区县 两级、斜杠分隔，缺失时逐级回退
-    const district = a.suburb || a.city_district || a.district || a.county || a.town || a.village;
-    const city = a.city || a.municipality || a.state || a.province;
+    const data = (await res.json()) as {
+      features?: Array<{ properties?: Record<string, string> }>;
+    };
+    const p = data.features?.[0]?.properties ?? {};
+    // 目标格式「深圳 / 福田」：市 / 区县两级、斜杠分隔，缺失逐级回退
+    const district = p.district || p.county || p.suburb || p.locality || p.town;
+    const city = (p.city || p.state || p.country || "").replace(/市$/, "");
     const parts = [city, district].filter((s): s is string => Boolean(s && s.trim()));
     if (parts.length === 2 && parts[0] === parts[1]) parts.pop();
     const label = parts.join(" / ");
