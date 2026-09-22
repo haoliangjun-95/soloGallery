@@ -112,14 +112,14 @@ export default function ViewToggle() {
           onMouseLeave={() => setHovered((h) => (h === mode.key ? null : h))}
           onFocus={() => setHovered(mode.key)}
           onBlur={() => setHovered((h) => (h === mode.key ? null : h))}
-          className={`h-10 w-10 rounded-full items-center justify-center transition-colors ${
+          className={`h-10 w-10 rounded-full items-center justify-center transition-colors focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2 ${
             mode.hideOnMobile ? "hidden sm:flex" : "flex"
           } ${
             current === mode.key ? "bg-foreground/15 text-foreground" : "text-muted hover:text-foreground"
           }`}
         >
           {mode.icon}
-          {/* 悬浮提示：桌面锚定按钮组左缘；手机端按钮组靠右，改锚右缘防超出屏幕；
+          {/* 悬浮提示：桌面锚定按钮组左缘；手机端按钮组靠右（order-2），改锚右缘防超出屏幕；
               未悬停时 display:none —— opacity:0 的绝对定位元素仍会撑出横向滚动 */}
           <span
             aria-hidden

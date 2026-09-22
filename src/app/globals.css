@@ -32,6 +32,29 @@ body {
   background: #3f3f46;
 }
 
+@layer base {
+  :focus-visible {
+    outline: 2px solid #f5b43c;
+    outline-offset: 3px;
+  }
+}
+
+html {
+  /* 锚点滚动时避开 sticky 页头（单行 h-16 + 余量） */
+  scroll-padding-top: 5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;

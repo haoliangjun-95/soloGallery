@@ -114,7 +114,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
             <Link
               key={photo.sha1}
               href={`/photo/${photo.sha1}`}
-              className="group relative mb-3 lg:mb-4 block break-inside-avoid overflow-hidden rounded-xl border border-edge"
+              className="group relative mb-3 lg:mb-4 block break-inside-avoid overflow-hidden rounded-xl border border-edge focus-visible:-outline-offset-2"
             >
               <img
                 src={photo.thumbUrl}
@@ -126,7 +126,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
               {photo.favorite ? (
                 <span className="absolute left-2 top-2 text-amber-400 drop-shadow-[0_1px_2px_rgba(0,0,0,.8)]">★</span>
               ) : null}
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2 opacity-100 transition-opacity [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
                 <p className="text-sm text-white truncate">{photo.title}</p>
               </div>
             </Link>
@@ -243,7 +243,7 @@ function PhotoCard({ photo, cover }: { photo: PhotoCardDTO; cover?: boolean }) {
       }`}
     >
       <div className={cover ? "relative aspect-square overflow-hidden bg-card" : "relative"}>
-        <Link href={`/photo/${photo.sha1}`} className={cover ? "block h-full" : "block"}>
+        <Link href={`/photo/${photo.sha1}`} className={`block focus-visible:-outline-offset-2${cover ? " h-full" : ""}`}>
           {/* 图片为 MinIO 公共读 WebP 变体，无需走 next/image 优化代理 */}
           <img
             src={photo.thumbUrl}
@@ -266,44 +266,49 @@ function PhotoCard({ photo, cover }: { photo: PhotoCardDTO; cover?: boolean }) {
         ) : null}
       </div>
 
-      <div className="p-3">
-        {/* 第一行：名称在左（超长截断），分类+标签芯片在右靠右对齐 */}
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="p-2.5 sm:p-3">
+        {/* 标题最多两行；标签独立排列，更多标签可进入详情查看。 */}
+        <div className="min-w-0">
           <Link
             href={`/photo/${photo.sha1}`}
-            className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
+            className="min-w-0 line-clamp-2 break-words text-sm font-medium leading-5 hover:underline"
             title={photo.title}
           >
             {photo.title}
           </Link>
 
           {photo.category || photo.tags.length > 0 ? (
-            <div className="flex shrink-0 items-center gap-1">
-              {photo.category ? (
-                <Link
-                  href={`/category/${photo.category.slug}`}
-                  className="rounded border border-edge px-1.5 py-0.5 text-[11px] text-muted hover:text-foreground"
-                >
-                  {photo.category.name}
+            <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
+              {[
+                ...(photo.category
+                  ? [{ href: `/category/${photo.category.slug}`, label: photo.category.name }]
+                  : []),
+                ...photo.tags.map((t) => ({ href: `/tag/${encodeURIComponent(t)}`, label: `#${t}` })),
+              ]
+                .slice(0, 2)
+                .map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    title={item.label}
+                    className="max-w-full truncate rounded border border-edge px-1.5 py-0.5 text-xs text-muted hover:text-foreground"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              {photo.tags.length + (photo.category ? 1 : 0) > 2 ? (
+                <Link href={`/photo/${photo.sha1}`} aria-label={`查看照片详情，含其余 ${photo.tags.length + (photo.category ? 1 : 0) - 2} 个标签`} className="shrink-0 rounded px-1.5 py-0.5 text-xs text-muted hover:text-foreground">
+                  +{photo.tags.length + (photo.category ? 1 : 0) - 2}
                 </Link>
               ) : null}
-              {photo.tags.map((t) => (
-                <Link
-                  key={t}
-                  href={`/tag/${encodeURIComponent(t)}`}
-                  className="rounded border border-edge px-1.5 py-0.5 text-[11px] text-muted hover:text-foreground"
-                >
-                  #{t}
-                </Link>
-              ))}
             </div>
           ) : null}
         </div>
 
         {meta.length > 0 ? (
           <ul className="mt-2 space-y-1">
-            {meta.map((row, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-xs text-muted min-w-0">
+            {(cover ? meta.slice(0, 3) : meta).map((row, i) => (
+              <li key={i} className={`min-w-0 items-start gap-1.5 text-xs text-muted ${cover && i > 0 ? "hidden sm:flex" : "flex"}`}>
                 <span className="shrink-0 mt-[2px] opacity-70">{row.icon}</span>
                 <span className="truncate" title={row.title ?? row.text}>
                   {row.text}

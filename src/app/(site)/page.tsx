@@ -103,7 +103,7 @@ export default async function HomePage({ searchParams }: Props) {
 
       <div className="min-w-0">
         {/* 移动端筛选栏（PC 走左侧栏） */}
-        <div className="flex lg:hidden flex-wrap items-center gap-2 mb-5 text-sm">
+        <div className="-mx-1 mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto p-1 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
           <FilterLink href={qs({ category: null, tag: null, year: null, q: null, fav: null })} active={!sp.category && !sp.tag && !sp.year && !fav && !month}>
             全部
           </FilterLink>
@@ -157,6 +157,14 @@ export default async function HomePage({ searchParams }: Props) {
           <h1 className="text-xl font-semibold mb-6">
             {year} 年 <span className="text-sm text-muted font-normal">{total} 张</span>
           </h1>
+        ) : sp.category ? (
+          <h1 className="text-xl font-semibold mb-6">
+            {categories.find((c) => c.slug === sp.category)?.name ?? sp.category} <span className="text-sm text-muted font-normal">{total} 张</span>
+          </h1>
+        ) : sp.tag ? (
+          <h1 className="text-xl font-semibold mb-6">
+            #{sp.tag} <span className="text-sm text-muted font-normal">{total} 张</span>
+          </h1>
         ) : view === "calendar" ? (
           <h1 className="text-xl font-semibold mb-6">日历</h1>
         ) : null}
@@ -190,7 +198,8 @@ function FilterLink({
   return (
     <Link
       href={href}
-      className={`rounded-full border px-3 py-1 transition-colors ${
+      aria-current={active ? "page" : undefined}
+      className={`inline-flex min-h-11 shrink-0 items-center rounded-full border px-3 py-1 transition-colors focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2 ${
         active ? "border-foreground/60 bg-foreground/10 text-foreground" : "border-edge text-muted hover:text-foreground"
       }`}
     >

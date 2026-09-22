@@ -187,7 +187,7 @@ function Item({
       ) : null}
       <span className={`truncate text-sm ${active ? "font-medium" : "font-normal"}`}>{label}</span>
       {typeof count === "number" && count > 0 ? (
-        <span className="ml-auto shrink-0 rounded-full bg-white/[0.06] px-2 py-[3px] text-[11px] leading-none text-white/40 tabular-nums">
+        <span className="ml-auto shrink-0 rounded-full bg-white/[0.08] px-2 py-[3px] text-xs leading-none text-white/60 tabular-nums">
           {count}
         </span>
       ) : null}
