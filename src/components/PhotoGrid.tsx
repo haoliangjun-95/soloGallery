@@ -23,6 +23,9 @@ interface Props {
   query?: { category?: string; tag?: string; year?: number; q?: string; fav?: boolean; month?: string };
 }
 
+/** 首屏图片 eager 预载数量：瀑布/固定卡片布局首屏全 lazy 会推迟 LCP、快速滚动时占位抖动 */
+const EAGER_FIRST_SCREEN = 8;
+
 export default function PhotoGrid({ initialItems, total, pageSize, view = "normal", query }: Props) {
   const [items, setItems] = useState(initialItems);
   const [page, setPage] = useState(1);
@@ -110,7 +113,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
         </div>
       ) : view === "masonry" ? (
         <div className="columns-2 sm:columns-3 xl:columns-4 2xl:columns-5 min-[2800px]:columns-6 gap-3 lg:gap-4 [column-fill:_balance]">
-          {items.map((photo) => (
+          {items.map((photo, idx) => (
             <Link
               key={photo.sha1}
               href={`/photo/${photo.sha1}`}
@@ -119,7 +122,10 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
               <img
                 src={photo.thumbUrl}
                 alt={photo.title}
-                loading="lazy"
+                width={photo.width ?? undefined}
+                height={photo.height ?? undefined}
+                loading={idx < EAGER_FIRST_SCREEN ? "eager" : "lazy"}
+                fetchPriority={idx === 0 ? "high" : undefined}
                 decoding="async"
                 className="w-full h-auto block transition-transform duration-200 group-hover:scale-[1.02]"
               />
@@ -136,8 +142,8 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
         // 固定宽高（参考 PhotoPrism Cards 视图）：统一正方形图片区 + cover 居中裁切 + 图下信息卡；
         // auto-fill 自适应列数（手机 2 列 / 平板笔记本 3 列 / 大屏 5-6 列），间距 6px 对齐 PhotoPrism
         <div className="grid grid-cols-[repeat(auto-fill,minmax(min(160px,40vw),1fr))] sm:grid-cols-[repeat(auto-fill,minmax(230px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-1.5 items-start">
-          {items.map((photo) => (
-            <PhotoCard key={photo.sha1} photo={photo} cover />
+          {items.map((photo, idx) => (
+            <PhotoCard key={photo.sha1} photo={photo} cover priority={idx < EAGER_FIRST_SCREEN} />
           ))}
         </div>
       ) : view === "list" ? (
@@ -178,8 +184,8 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
         </div>
       ) : (
         <div className="columns-2 sm:columns-3 xl:columns-4 2xl:columns-5 min-[2800px]:columns-6 gap-3 lg:gap-4 [column-fill:_balance]">
-          {items.map((photo) => (
-            <PhotoCard key={photo.sha1} photo={photo} />
+          {items.map((photo, idx) => (
+            <PhotoCard key={photo.sha1} photo={photo} priority={idx < EAGER_FIRST_SCREEN} />
           ))}
         </div>
       )}
@@ -194,7 +200,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
 
 /** 单张卡片：图 + 收藏星标 + 标题/分类/标签/拍摄信息（参考用户给的样图布局）。
  *  cover=true 时图片固定正方形裁切铺满，用于固定宽高视图（PhotoPrism Cards 风格）。 */
-function PhotoCard({ photo, cover }: { photo: PhotoCardDTO; cover?: boolean }) {
+function PhotoCard({ photo, cover, priority }: { photo: PhotoCardDTO; cover?: boolean; priority?: boolean }) {
   const exif = photo.exif;
   const meta: { icon: React.ReactNode; text: string; title?: string }[] = [];
 
@@ -250,7 +256,7 @@ function PhotoCard({ photo, cover }: { photo: PhotoCardDTO; cover?: boolean }) {
             alt={photo.title}
             width={cover ? undefined : (photo.width ?? undefined)}
             height={cover ? undefined : (photo.height ?? undefined)}
-            loading="lazy"
+            loading={priority ? "eager" : "lazy"}
             decoding="async"
             className={
               cover

@@ -48,7 +48,7 @@ export default async function PhotoPage({ params }: PageProps<"/photo/[sha1]">) 
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_420px] items-start">
         <div>
-          <ZoomableImage src={zoomSrc} alt={photo.title} />
+          <ZoomableImage src={zoomSrc} alt={photo.title} width={photo.width} height={photo.height} />
           {showOriginalEntry ? (
             <div className="mt-3 flex items-center justify-between text-sm">
               <a href={photo.originalUrl} target="_blank" rel="noreferrer" className="text-muted hover:text-foreground">

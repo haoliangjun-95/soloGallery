@@ -2,7 +2,17 @@
 
 import { useEffect, useState } from "react";
 
-export default function ZoomableImage({ src, alt }: { src: string; alt: string }) {
+export default function ZoomableImage({
+  src,
+  alt,
+  width,
+  height,
+}: {
+  src: string;
+  alt: string;
+  width?: number | null;
+  height?: number | null;
+}) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -28,7 +38,17 @@ export default function ZoomableImage({ src, alt }: { src: string; alt: string }
         className="block w-full cursor-zoom-in rounded-xl overflow-hidden bg-card border border-edge"
         title="点击放大"
       >
-        <img src={src} alt={alt} className="w-full h-auto block" loading="eager" decoding="async" />
+        {/* 详情页 LCP 元素：显式宽高预留纵横比防 CLS，fetchPriority=high 提前调度 */}
+        <img
+          src={src}
+          alt={alt}
+          width={width ?? undefined}
+          height={height ?? undefined}
+          className="w-full h-auto block"
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
+        />
       </button>
 
       {open ? (
