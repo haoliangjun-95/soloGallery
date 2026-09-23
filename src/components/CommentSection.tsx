@@ -16,7 +16,9 @@ export default function CommentSection({
   initialComments: CommentDTO[];
 }) {
   const router = useRouter();
-  const [comments] = useState(initialComments);
+  // 直接渲染 prop（派生值）而非 useState 冻结快照：
+  // 自动过审模式下 router.refresh() 拉回的新 initialComments 才能立即上屏
+  const comments = initialComments;
   const [nickname, setNickname] = useState("");
   const [email, setEmail] = useState("");
   const [content, setContent] = useState("");
@@ -152,9 +154,11 @@ export default function CommentSection({
   );
 }
 
+// Intl 格式化器构造较重，模块级复用（同 lib/time.ts 的先例）；评论列表逐条调用时避免重复构造
+let commentTimeFormatter: Intl.DateTimeFormat | null = null;
+
 function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return new Intl.DateTimeFormat("zh-CN", {
+  commentTimeFormatter ??= new Intl.DateTimeFormat("zh-CN", {
     timeZone: DISPLAY_TZ,
     year: "numeric",
     month: "2-digit",
@@ -162,5 +166,6 @@ function formatTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  }).format(d);
+  });
+  return commentTimeFormatter.format(new Date(iso));
 }

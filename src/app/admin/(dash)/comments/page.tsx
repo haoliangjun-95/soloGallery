@@ -8,8 +8,13 @@ const TABS = [
   { key: "PENDING", label: "待审" },
   { key: "APPROVED", label: "已通过" },
   { key: "SPAM", label: "垃圾" },
-  { key: "", label: "全部" },
+  // "全部"用显式参数：无 status 参数与"全部"必须可区分，否则默认态会误吞"全部"
+  { key: "all", label: "全部" },
 ] as const;
+
+type CommentStatus = "PENDING" | "APPROVED" | "SPAM";
+
+const VALID_STATUSES = new Set<string>(["PENDING", "APPROVED", "SPAM"]);
 
 export default async function AdminCommentsPage({
   searchParams,
@@ -17,10 +22,10 @@ export default async function AdminCommentsPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const sp = await searchParams;
-  const status = TABS.some((t) => t.key === sp.status) ? (sp.status || undefined) : "PENDING";
-  const comments = await listCommentsAdmin(status as "PENDING" | "APPROVED" | "SPAM" | undefined);
-  // 打开评论页即视为已读（角标清零）
-  await markAllCommentsRead();
+  const tabKey = TABS.some((t) => t.key === sp.status) ? (sp.status as string) : "PENDING";
+  const status = VALID_STATUSES.has(tabKey) ? (tabKey as CommentStatus) : undefined;
+  // 查询与"标记已读"互不依赖，并行（打开评论页即视为已读，角标清零）
+  const [comments] = await Promise.all([listCommentsAdmin(status), markAllCommentsRead()]);
 
   return (
     <div>
@@ -29,9 +34,9 @@ export default async function AdminCommentsPage({
         {TABS.map((tab) => (
           <Link
             key={tab.key}
-            href={tab.key ? `/admin/comments?status=${tab.key}` : "/admin/comments"}
+            href={`/admin/comments?status=${tab.key}`}
             className={`rounded-full border px-3 py-1 ${
-              (sp.status ?? "PENDING") === tab.key || (!sp.status && tab.key === "PENDING")
+              tabKey === tab.key
                 ? "border-foreground/60 bg-foreground/10"
                 : "border-edge text-muted hover:text-foreground"
             }`}
