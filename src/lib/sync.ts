@@ -106,7 +106,12 @@ async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise
       results[i] = await fn(items[i]);
     }
   });
-  await Promise.all(workers);
+  // allSettled 而非 all：all 在首个 worker 抛错时立即 reject，其余 worker 仍在运行、
+  // 继续写 results/数据库——调用方捕获异常把本次 sync 标记 FAILED 后，孤儿 worker
+  // 还在后台改数据，统计与实际写库脱节。settle 完再抛首个失败原因，调用方语义不变。
+  const settled = await Promise.allSettled(workers);
+  const rejected = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
+  if (rejected) throw rejected.reason;
   return results;
 }
 
@@ -342,35 +347,46 @@ export async function runSync(trigger: "manual" | "cron"): Promise<SyncSummary> 
     // 2) 已入库：补 display、回填文件名、复活 missing
     const existingAlive = alive.filter((a) => dbByHash.has(a.hash));
     await mapPool(existingAlive, 4, async (item) => {
-      const photo = dbByHash.get(item.hash)!;
-      let touched = false;
-      const dKey = displayKey(item.hash);
-      if (!(await exists(dKey))) {
-        try {
-          const buf = await getBuffer(originalKey(item.hash));
-          const result = await generateDisplay(buf);
-          await putBuffer(dKey, result.webp, "image/webp");
-          touched = true;
-        } catch (err) {
-          const msg = `${item.hash}: ${err instanceof Error ? err.message : String(err)}`;
-          if (errors.length < 50) errors.push(msg);
+      // 单张失败不中断整批（与 step-1 导入循环同款处理）：
+      // s3.exists 改为仅吞 404 后，网络抖动/权限错误会上抛；prisma.photo.update
+      // 也可能因连接闪断失败——旧代码会让整次 sync 标 FAILED 且错误远离出错照片
+      try {
+        const photo = dbByHash.get(item.hash)!;
+        let touched = false;
+        const dKey = displayKey(item.hash);
+        if (!(await exists(dKey))) {
+          try {
+            const buf = await getBuffer(originalKey(item.hash));
+            const result = await generateDisplay(buf);
+            await putBuffer(dKey, result.webp, "image/webp");
+            touched = true;
+          } catch (err) {
+            // display 生成失败不阻断后续 missing 复活/文件名回填/收藏归并
+            const msg = `${item.hash}: ${err instanceof Error ? err.message : String(err)}`;
+            logger.warn("display 生成失败", msg);
+            if (errors.length < 50) errors.push(msg);
+          }
         }
-      }
-      if (photo.missing) touched = true;
-      // 收藏 OR 语义：库值或 manifest 归并值任一为真即为真，只升不降——
-      // 画廊侧手动收藏不会被壁纸端同步冲掉，反之亦然（与壁纸软件 CRDT 的取或一致）
-      const favoriteUp = item.favorite && !photo.favorite;
-      const fillName = !photo.fileName && item.fileName ? ensureExt(item.fileName, "jpg", item.hash) : undefined;
-      if (touched || fillName || favoriteUp) {
-        await prisma.photo.update({
-          where: { id: photo.id },
-          data: {
-            ...(photo.missing ? { missing: false } : {}),
-            ...(fillName ? { fileName: fillName } : {}),
-            ...(favoriteUp ? { favorite: true } : {}),
-          },
-        });
-        updated++;
+        if (photo.missing) touched = true;
+        // 收藏 OR 语义：库值或 manifest 归并值任一为真即为真，只升不降——
+        // 画廊侧手动收藏不会被壁纸端同步冲掉，反之亦然（与壁纸软件 CRDT 的取或一致）
+        const favoriteUp = item.favorite && !photo.favorite;
+        const fillName = !photo.fileName && item.fileName ? ensureExt(item.fileName, "jpg", item.hash) : undefined;
+        if (touched || fillName || favoriteUp) {
+          await prisma.photo.update({
+            where: { id: photo.id },
+            data: {
+              ...(photo.missing ? { missing: false } : {}),
+              ...(fillName ? { fileName: fillName } : {}),
+              ...(favoriteUp ? { favorite: true } : {}),
+            },
+          });
+          updated++;
+        }
+      } catch (err) {
+        const msg = `${item.hash}: ${err instanceof Error ? err.message : String(err)}`;
+        logger.warn("存量补全失败", msg);
+        if (errors.length < 50) errors.push(msg);
       }
     });
 

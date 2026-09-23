@@ -68,8 +68,13 @@ export async function exists(key: string): Promise<boolean> {
   try {
     await s3.send(new HeadObjectCommand({ Bucket: bucket(), Key: key }));
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    // 仅 404/NotFound 视为「不存在」；网络故障、403 权限错误必须上抛——
+    // 吞成 false 会把可导入照片记成 object-missing skip、权限配错时全部静默跳过，
+    // 零日志且错误远离根因，排查极难
+    const meta = err as { $metadata?: { httpStatusCode?: number }; name?: string };
+    if (meta?.$metadata?.httpStatusCode === 404 || meta?.name === "NotFound") return false;
+    throw err;
   }
 }
 
