@@ -197,11 +197,12 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
                 {!photo.published && !photo.missing ? <Badge>未发布</Badge> : null}
               </div>
 
-              {/* 悬浮：编辑入口 */}
+              {/* 编辑入口：仅精确指针设备默认隐藏（悬浮/聚焦显现）；
+                  触屏无 hover 必须常显，键盘 Tab 聚焦也要可见（同 PhotoGrid 信息浮层的先例） */}
               <button
                 type="button"
                 onClick={() => setEditing(photo)}
-                className="absolute right-2 bottom-2 rounded-md bg-black/60 px-2 py-1 text-xs text-white/90 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute right-2 bottom-2 rounded-md bg-black/60 px-2 py-1 text-xs text-white/90 hover:text-white opacity-100 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
               >
                 编辑
               </button>
@@ -310,6 +311,9 @@ function EditModal({
   const [tags, setTags] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  // 详情加载失败同样禁止保存：此时描述/标签/分类还是空初始值，放行等于
+  // 把库中已有数据以空值整体替换——与「加载中」是同一条数据丢失路径
+  const [loadFailed, setLoadFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // 详情字段（描述/标签/分类 id）需从服务端取
@@ -319,7 +323,10 @@ function EditModal({
       .then(async (r) => {
         if (!r.ok) {
           // 取不到详情时要说明，否则描述/标签空白会被当成「本来就没填」
-          if (!cancelled) setError(await responseError(r, "无法读取图片详情"));
+          if (!cancelled) {
+            setError(await responseError(r, "无法读取图片详情"));
+            setLoadFailed(true);
+          }
           return null;
         }
         return r.json();
@@ -331,7 +338,10 @@ function EditModal({
         setCategoryId(d.categoryId !== null && d.categoryId !== undefined ? String(d.categoryId) : "");
       })
       .catch((err) => {
-        if (!cancelled) setError(errorMessage(err));
+        if (!cancelled) {
+          setError(errorMessage(err));
+          setLoadFailed(true);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -399,7 +409,7 @@ function EditModal({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            disabled={loading}
+            disabled={loading || loadFailed}
             className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm outline-none focus:border-foreground/40 resize-y"
           />
         </label>
@@ -408,7 +418,7 @@ function EditModal({
           <select
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
-            disabled={loading}
+            disabled={loading || loadFailed}
             className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm"
           >
             <option value="">（无分类）</option>
@@ -424,7 +434,7 @@ function EditModal({
           <input
             value={tags}
             onChange={(e) => setTags(e.target.value)}
-            disabled={loading}
+            disabled={loading || loadFailed}
             placeholder="风景, 城市"
             className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm outline-none focus:border-foreground/40"
           />
@@ -439,10 +449,12 @@ function EditModal({
           <button
             type="button"
             onClick={save}
-            disabled={saving}
+            // 详情未成功加载不允许保存（含加载失败）：保存语义是整体替换，
+            // 此时提交会把服务端已有的描述/标签/分类以空值抹掉（数据丢失）
+            disabled={saving || loading || loadFailed}
             className="rounded-lg bg-foreground text-background px-4 py-2 text-sm font-medium disabled:opacity-40"
           >
-            {saving ? "保存中…" : "保存"}
+            {saving ? "保存中…" : loading ? "加载中…" : loadFailed ? "读取详情失败" : "保存"}
           </button>
         </div>
       </div>
