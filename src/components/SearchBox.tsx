@@ -1,11 +1,23 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
-export default function SearchBox({ initialQuery = "" }: { initialQuery?: string }) {
+export default function SearchBox() {
   const router = useRouter();
-  const [value, setValue] = useState(initialQuery);
+  // URL 是搜索状态的单一事实来源（web/patterns 的 URL-as-state）：
+  // 刷新/前进后退后 ?q= 直接回填输入框。同 layout 的 ViewToggle 已用此法，
+  // (site) 全路由动态渲染，useSearchParams 无需 Suspense（见 layout.tsx 注释）
+  const searchParams = useSearchParams();
+  const urlQuery = searchParams.get("q") ?? "";
+  const [value, setValue] = useState(urlQuery);
+  // 渲染期调整（React 官方 derive-state-from-props 模式，避免 effect-setState 级联渲染）：
+  // 输入过程中本地 value 优先；导航事件（后退/程序化跳转）以 URL 为准同步回输入框
+  const [syncedQuery, setSyncedQuery] = useState(urlQuery);
+  if (urlQuery !== syncedQuery) {
+    setSyncedQuery(urlQuery);
+    setValue(urlQuery);
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
