@@ -10,6 +10,7 @@ function uniqueKey(): string {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 describe("rateAllow", () => {
@@ -42,16 +43,25 @@ describe("rateAllow", () => {
 });
 
 describe("clientIp", () => {
-  it("优先取 x-forwarded-for 的第一段", () => {
+  it("默认不信任转发头：未设 TRUST_PROXY 时即使带 XFF 也返回 unknown", () => {
+    vi.stubEnv("TRUST_PROXY", "false");
+    const headers = new Headers({ "x-forwarded-for": "203.0.113.5", "x-real-ip": "203.0.113.9" });
+    expect(clientIp(headers)).toBe("unknown");
+  });
+
+  it("TRUST_PROXY=true 时优先取 x-forwarded-for 的第一段", () => {
+    vi.stubEnv("TRUST_PROXY", "true");
     const headers = new Headers({ "x-forwarded-for": "203.0.113.5, 198.51.100.7" });
     expect(clientIp(headers)).toBe("203.0.113.5");
   });
 
-  it("没有 forwarded 时退回 x-real-ip", () => {
+  it("TRUST_PROXY=true 且没有 forwarded 时退回 x-real-ip", () => {
+    vi.stubEnv("TRUST_PROXY", "true");
     expect(clientIp(new Headers({ "x-real-ip": "203.0.113.9" }))).toBe("203.0.113.9");
   });
 
-  it("都没有时返回 unknown", () => {
+  it("TRUST_PROXY=true 但都没有时返回 unknown", () => {
+    vi.stubEnv("TRUST_PROXY", "true");
     expect(clientIp(new Headers())).toBe("unknown");
   });
 });

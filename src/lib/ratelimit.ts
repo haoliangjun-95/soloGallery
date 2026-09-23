@@ -20,6 +20,13 @@ export function rateAllow(ip: string, limit = 5, windowMs = 60 * 60 * 1000): boo
 }
 
 export function clientIp(headers: Headers): string {
+  // X-Forwarded-For / X-Real-IP 都是客户端可任意伪造的头：无反代时直接采信，
+  // 攻击者每次请求换一个假 IP 即可绕过登录爆破限制与评论限流。
+  // 仅在部署方明确声明拓扑（TRUST_PROXY=true）时信任转发头，且要求反代
+  // 覆写而非追加 XFF（如 nginx：proxy_set_header X-Forwarded-For $remote_addr）。
+  // 直连场景 Route Handler 拿不到 socket IP，统一 "unknown"——限流退化为全局桶，
+  // 对单管理员站点仍可拦截爆破，只是粒度变粗。
+  if (process.env.TRUST_PROXY !== "true") return "unknown";
   const fwd = headers.get("x-forwarded-for");
   if (fwd) return fwd.split(",")[0].trim();
   return headers.get("x-real-ip") ?? "unknown";

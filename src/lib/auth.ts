@@ -9,10 +9,22 @@ export interface SessionData {
   username?: string;
 }
 
+/**
+ * 已知占位密钥黑名单：.env.example 的示例值恰好满足长度校验，
+ * 照抄部署等于把会话签名密钥公开——任何人都能伪造 admin cookie。
+ * 命中即拒绝启动，强制换成真随机值。
+ */
+const PLACEHOLDER_SECRET_PATTERN = /change[-_ ]?me|example|placeholder|your[-_]/i;
+
 function sessionOptions(secure: boolean) {
   const password = process.env.SESSION_SECRET;
   if (!password || password.length < 32) {
     throw new Error("SESSION_SECRET 未设置或不足 32 字符");
+  }
+  if (PLACEHOLDER_SECRET_PATTERN.test(password)) {
+    throw new Error(
+      "SESSION_SECRET 仍是 .env.example 的占位值，可被用于伪造管理员会话；请替换为随机字符串（如 openssl rand -base64 32）",
+    );
   }
   return {
     cookieName: "solog_session",
@@ -87,6 +99,12 @@ export class AdminBootstrapError extends Error {
 const MIN_ADMIN_PASSWORD_LENGTH = 8;
 
 /**
+ * 已知弱密码黑名单：.env.example 的示例值等「恰好满足长度校验」的占位密码。
+ * scripts/seed.ts 维护同一份名单（seed 无法 import 本模块——server-only）。
+ */
+const KNOWN_WEAK_PASSWORDS = new Set(["admin123456", "password", "12345678", "changeme123"]);
+
+/**
  * 首次启动兜底：库里没有管理员时按环境变量创建（seed 脚本也会做）。
  * 不再回落到硬编码弱密码 —— 未配置 ADMIN_PASSWORD 时拒绝创建，
  * 否则公网部署会留下人人皆知的默认账号。
@@ -99,6 +117,11 @@ export async function ensureAdminUser(): Promise<void> {
   if (!password || password.length < MIN_ADMIN_PASSWORD_LENGTH) {
     throw new AdminBootstrapError(
       `尚未初始化管理员：请设置环境变量 ADMIN_PASSWORD（至少 ${MIN_ADMIN_PASSWORD_LENGTH} 位）后重启，或执行 npm run db:seed`,
+    );
+  }
+  if (KNOWN_WEAK_PASSWORDS.has(password.toLowerCase())) {
+    throw new AdminBootstrapError(
+      "ADMIN_PASSWORD 是众所周知的弱密码（如 .env.example 示例值），公网部署等于送出门；请换一个强密码",
     );
   }
   await prisma.adminUser.create({
