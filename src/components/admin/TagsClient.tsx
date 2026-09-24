@@ -1,55 +1,30 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { errorMessage, responseError } from "@/lib/fetch-error";
 import type { TagDTO } from "@/lib/types";
 import { ConfirmDialog } from "./ConfirmDialog";
+import ErrorBanner from "./ErrorBanner";
+import { jsonInit, useAdminAction } from "./useAdminAction";
 
 export default function TagsClient({ initial }: { initial: TagDTO[] }) {
-  const router = useRouter();
+  const { busy, error, setError, run } = useAdminAction();
   const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<TagDTO | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
+  // 创建不做乐观：新行需要服务端生成的 id/计数，refresh 回流即真值。
+  // 重名等 400 场景原来只清空输入框、看起来像添加成功了——现在错误进 ErrorBanner
   async function create(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/admin/tags", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
-      });
-      // 重名等 400 场景原来只清空输入框，看起来像添加成功了
-      if (!res.ok) {
-        setError(await responseError(res));
-        return;
-      }
-      setName("");
-      router.refresh();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    await run("/api/admin/tags", jsonInit("POST", { name: name.trim() }), {
+      onSuccess: () => setName(""),
+    });
   }
 
+  // 删除不做乐观（低频 + ConfirmDialog 确认门槛），但经 hook 补上此前缺失的
+  // busy 门——原实现 DELETE 在途时仍可再次触发（重复请求）
   async function remove(id: number) {
-    setError(null);
-    try {
-      const res = await fetch(`/api/admin/tags/${id}`, { method: "DELETE" });
-      if (!res.ok) {
-        setError(await responseError(res));
-        return;
-      }
-      router.refresh();
-    } catch (err) {
-      setError(errorMessage(err));
-    }
+    await run(`/api/admin/tags/${id}`, { method: "DELETE" });
   }
 
   return (
@@ -70,14 +45,7 @@ export default function TagsClient({ initial }: { initial: TagDTO[] }) {
         </button>
       </form>
 
-      {error ? (
-        <div className="flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          <span className="flex-1">{error}</span>
-          <button type="button" onClick={() => setError(null)} className="leading-none hover:text-red-200" aria-label="关闭提示">
-            ×
-          </button>
-        </div>
-      ) : null}
+      <ErrorBanner error={error} onClose={() => setError(null)} />
 
       <div className="flex flex-wrap gap-2">
         {initial.map((t) => (

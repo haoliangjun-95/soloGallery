@@ -1,71 +1,78 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { errorMessage, responseError } from "@/lib/fetch-error";
+import { insertAt, patchById, removeById } from "@/lib/optimistic";
 import { DISPLAY_TZ } from "@/lib/time";
 import type { CommentAdminDTO } from "@/lib/types";
 import { ConfirmDialog } from "./ConfirmDialog";
+import ErrorBanner from "./ErrorBanner";
+import { jsonInit, useAdminAction } from "./useAdminAction";
 
 export default function CommentsClient({ initial }: { initial: CommentAdminDTO[] }) {
-  const router = useRouter();
+  const { busy, error, setError, run } = useAdminAction();
   const [replies, setReplies] = useState<Record<number, string>>({});
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pendingRemoveId, setPendingRemoveId] = useState<number | null>(null);
-
-  async function patch(id: number, data: Record<string, unknown>) {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/admin/comments/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      // 失败时原来只 refresh，界面毫无变化，用户会反复点同一个按钮
-      if (!res.ok) {
-        setError(await responseError(res));
-        return;
-      }
-      router.refresh();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+  /** 乐观更新的行级 pending：只禁目标评论的按钮，不再全局 busy 冻结整列表 */
+  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
+  // 本地镜像（功能 9 乐观更新）：通过/标垃圾/回复/删除立即生效；router.refresh()
+  // 回流新 initial 引用时重置——React 官方「prop 变化时渲染期调整 state」模式
+  // （放 effect 会级联渲染并挂 react-hooks/set-state-in-effect）
+  const [comments, setComments] = useState(initial);
+  const [syncedInitial, setSyncedInitial] = useState(initial);
+  if (initial !== syncedInitial) {
+    setSyncedInitial(initial);
+    setComments(initial);
   }
 
-  async function remove(id: number) {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/admin/comments/${id}`, { method: "DELETE" });
-      if (!res.ok) {
-        setError(await responseError(res));
-        return;
-      }
-      router.refresh();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+  function withPending(id: number) {
+    setPendingIds((prev) => new Set(prev).add(id));
+  }
+  function withoutPending(id: number) {
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  /**
+   * 乐观 PATCH（通过/标垃圾/回复）：本地立即生效，失败以反向补丁只回滚本行
+   * ——函数式回滚不 clobber 其它 in-flight 行的中间态。失败时原来只 refresh、
+   * 界面毫无变化致用户反复点同一按钮——现在错误进 ErrorBanner + 本行还原。
+   */
+  async function patchComment(
+    comment: CommentAdminDTO,
+    patch: Partial<CommentAdminDTO>,
+    rollback: Partial<CommentAdminDTO>,
+    onSuccess?: () => void,
+  ) {
+    if (busy || pendingIds.has(comment.id)) return;
+    setComments((prev) => patchById(prev, comment.id, patch));
+    withPending(comment.id);
+    const ok = await run(`/api/admin/comments/${comment.id}`, jsonInit("PATCH", patch), { quiet: true, onSuccess });
+    withoutPending(comment.id);
+    if (!ok) setComments((prev) => patchById(prev, comment.id, rollback));
+  }
+
+  /** 乐观 DELETE：行立即消失，失败按删除前记录的 index 原位插回恢复顺序 */
+  async function removeComment(id: number) {
+    if (busy || pendingIds.has(id)) return;
+    const index = comments.findIndex((c) => c.id === id);
+    if (index < 0) return;
+    const row = comments[index];
+    setComments((prev) => removeById(prev, id));
+    withPending(id);
+    const ok = await run(`/api/admin/comments/${id}`, { method: "DELETE" }, { quiet: true });
+    withoutPending(id);
+    if (!ok) setComments((prev) => insertAt(prev, index, row));
   }
 
   return (
     <>
-      {error ? (
-        <div className="mb-4 flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          <span className="flex-1">{error}</span>
-          <button type="button" onClick={() => setError(null)} className="leading-none hover:text-red-200" aria-label="关闭提示">
-            ×
-          </button>
-        </div>
-      ) : null}
+      <ErrorBanner error={error} onClose={() => setError(null)} className="mb-4" />
       <ul className="space-y-4">
-      {initial.map((c) => (
+      {comments.map((c) => (
         <li key={c.id} className="rounded-xl border border-edge bg-card p-4">
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="font-medium">{c.nickname}</span>
@@ -116,8 +123,16 @@ export default function CommentsClient({ initial }: { initial: CommentAdminDTO[]
             />
             <button
               type="button"
-              disabled={busy || !(replies[c.id] ?? "").trim()}
-              onClick={() => patch(c.id, { adminReply: replies[c.id] })}
+              disabled={pendingIds.has(c.id) || !(replies[c.id] ?? "").trim()}
+              onClick={() =>
+                patchComment(
+                  c,
+                  { adminReply: replies[c.id] },
+                  { adminReply: c.adminReply },
+                  // 服务端确认后才清空草稿：失败时用户输入还在，可直接重试
+                  () => setReplies((prev) => ({ ...prev, [c.id]: "" })),
+                )
+              }
               className="rounded-lg border border-edge px-3 py-1.5 text-xs text-muted hover:text-foreground disabled:opacity-30"
             >
               回复
@@ -125,8 +140,8 @@ export default function CommentsClient({ initial }: { initial: CommentAdminDTO[]
             {c.status !== "APPROVED" ? (
               <button
                 type="button"
-                disabled={busy}
-                onClick={() => patch(c.id, { status: "APPROVED" })}
+                disabled={pendingIds.has(c.id)}
+                onClick={() => patchComment(c, { status: "APPROVED" }, { status: c.status })}
                 className="rounded-lg border border-emerald-500/40 px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-30"
               >
                 通过
@@ -135,8 +150,8 @@ export default function CommentsClient({ initial }: { initial: CommentAdminDTO[]
             {c.status !== "SPAM" ? (
               <button
                 type="button"
-                disabled={busy}
-                onClick={() => patch(c.id, { status: "SPAM" })}
+                disabled={pendingIds.has(c.id)}
+                onClick={() => patchComment(c, { status: "SPAM" }, { status: c.status })}
                 className="rounded-lg border border-edge px-3 py-1.5 text-xs text-amber-400 hover:bg-amber-500/10 disabled:opacity-30"
               >
                 标垃圾
@@ -144,7 +159,7 @@ export default function CommentsClient({ initial }: { initial: CommentAdminDTO[]
             ) : null}
             <button
               type="button"
-              disabled={busy}
+              disabled={pendingIds.has(c.id)}
               onClick={() => setPendingRemoveId(c.id)}
               className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-30"
             >
@@ -153,7 +168,7 @@ export default function CommentsClient({ initial }: { initial: CommentAdminDTO[]
           </div>
         </li>
       ))}
-        {initial.length === 0 ? <li className="py-10 text-center text-sm text-muted">没有评论</li> : null}
+        {comments.length === 0 ? <li className="py-10 text-center text-sm text-muted">没有评论</li> : null}
       </ul>
 
       {pendingRemoveId !== null ? (
@@ -161,7 +176,7 @@ export default function CommentsClient({ initial }: { initial: CommentAdminDTO[]
           message="确认删除该评论？删除后无法恢复。"
           confirmLabel="删除"
           danger
-          onConfirm={() => remove(pendingRemoveId)}
+          onConfirm={() => removeComment(pendingRemoveId)}
           onClose={() => setPendingRemoveId(null)}
         />
       ) : null}

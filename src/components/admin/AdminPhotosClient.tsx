@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { errorMessage, responseError } from "@/lib/fetch-error";
+import { patchById } from "@/lib/optimistic";
 import type { AdminPhotoDTO, CategoryDTO } from "@/lib/types";
 import { ConfirmDialog, PromptDialog } from "./ConfirmDialog";
+import ErrorBanner from "./ErrorBanner";
+import { jsonInit, useAdminAction } from "./useAdminAction";
 
 interface Props {
   items: AdminPhotoDTO[];
@@ -16,13 +18,22 @@ interface Props {
 }
 
 export default function AdminPhotosClient({ items, total, page, pageSize, categories }: Props) {
-  const router = useRouter();
+  const { busy, error, setError, run } = useAdminAction();
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<AdminPhotoDTO | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [tagPrompt, setTagPrompt] = useState(false);
+  /** 乐观更新的行级 pending：只禁目标照片的 ★/开关，不再全局 busy 冻结整格 */
+  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
+  // 本地镜像（功能 9 乐观更新）：★/发布翻转立即生效；router.refresh() 回流新
+  // items 引用时重置——React 官方「prop 变化时渲染期调整 state」模式
+  // （放 effect 会级联渲染并挂 react-hooks/set-state-in-effect）
+  const [photos, setPhotos] = useState(items);
+  const [syncedItems, setSyncedItems] = useState(items);
+  if (items !== syncedItems) {
+    setSyncedItems(items);
+    setPhotos(items);
+  }
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -35,49 +46,31 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
     });
   }
 
-  async function patchPhoto(id: number, data: Record<string, unknown>) {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/admin/photos/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      // 之前无论成败都只 refresh，失败时开关会静默弹回原状，用户以为是自己点错了
-      if (!res.ok) {
-        setError(await responseError(res));
-        return;
-      }
-      router.refresh();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+  /**
+   * 乐观单行翻转（★ 收藏 / 发布开关）：本地立即生效，失败以反向补丁只回滚本行
+   * ——函数式回滚不 clobber 其它 in-flight 行的中间态；错误经 hook 进 ErrorBanner
+   * （此前失败时开关静默弹回原状，用户以为是自己点错了）。成功后仍 refresh 回流
+   * 服务端真值兜底一致性。
+   */
+  async function togglePhoto(id: number, patch: Partial<AdminPhotoDTO>, rollback: Partial<AdminPhotoDTO>) {
+    if (busy || pendingIds.has(id)) return;
+    setPhotos((prev) => patchById(prev, id, patch));
+    setPendingIds((prev) => new Set(prev).add(id));
+    const ok = await run(`/api/admin/photos/${id}`, jsonInit("PATCH", patch), { quiet: true });
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    if (!ok) setPhotos((prev) => patchById(prev, id, rollback));
   }
 
   async function batch(action: string, extra: Record<string, unknown> = {}) {
     if (!selected.size || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/admin/photos/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [...selected], action, ...extra }),
-      });
-      if (!res.ok) {
-        setError(await responseError(res));
-        return;
-      }
-      setSelected(new Set());
-      router.refresh();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    // 批量涉及多行且动作多样（含删除），不做乐观——保持全局 busy 门 + refresh
+    await run("/api/admin/photos/batch", jsonInit("POST", { ids: [...selected], action, ...extra }), {
+      onSuccess: () => setSelected(new Set()),
+    });
   }
 
   async function moveCategory(categoryId: number | null) {
@@ -137,17 +130,10 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
         ) : null}
       </div>
 
-      {error ? (
-        <div className="mb-4 flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          <span className="flex-1">{error}</span>
-          <button type="button" onClick={() => setError(null)} className="leading-none hover:text-red-200" aria-label="关闭提示">
-            ×
-          </button>
-        </div>
-      ) : null}
+      <ErrorBanner error={error} onClose={() => setError(null)} className="mb-4" />
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
-        {items.map((photo) => (
+        {photos.map((photo) => (
           <div
             key={photo.id}
             className={`group relative rounded-xl overflow-hidden border bg-card ${
@@ -173,8 +159,8 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
               <div className="absolute top-2 right-2 flex items-center gap-2 rounded-md bg-black/60 px-2 py-1">
                 <button
                   type="button"
-                  onClick={() => patchPhoto(photo.id, { favorite: !photo.favorite })}
-                  disabled={busy}
+                  onClick={() => togglePhoto(photo.id, { favorite: !photo.favorite }, { favorite: photo.favorite })}
+                  disabled={busy || pendingIds.has(photo.id)}
                   title={photo.favorite ? "已收藏，点击取消" : "点击收藏"}
                   className={`leading-none ${photo.favorite ? "text-amber-400" : "text-white/50 hover:text-amber-300"} disabled:opacity-40`}
                 >
@@ -184,9 +170,9 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
                   type="checkbox"
                   role="switch"
                   checked={photo.published}
-                  disabled={busy}
+                  disabled={busy || pendingIds.has(photo.id)}
                   title={photo.published ? "已发布，点击隐藏" : "未发布，点击发布"}
-                  onChange={(e) => patchPhoto(photo.id, { published: e.target.checked })}
+                  onChange={(e) => togglePhoto(photo.id, { published: e.target.checked }, { published: photo.published })}
                   className="cursor-pointer accent-emerald-500"
                 />
               </div>
@@ -221,7 +207,7 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
         ))}
       </div>
 
-      {items.length === 0 ? (
+      {photos.length === 0 ? (
         <div className="py-24 text-center text-muted">
           没有符合条件的图片。调整筛选条件，或去 <Link href="/admin/sync" className="underline">同步</Link> /{" "}
           <Link href="/admin/upload" className="underline">上传</Link>。
@@ -304,17 +290,18 @@ function EditModal({
   categories: CategoryDTO[];
   onClose: () => void;
 }) {
-  const router = useRouter();
+  // busy 即「保存中」：加载详情的 GET 不走 run（有独立 loading/loadFailed 态），
+  // hook 的 busy 只由 save() 驱动。error 双源共用——加载失败写 setError 进同一
+  // 紧凑错误框（run 开始时 setError(null) 恰好清掉陈旧加载错误，语义正确）
+  const { busy: saving, error, setError, run } = useAdminAction();
   const [title, setTitle] = useState(photo.title);
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
   const [tags, setTags] = useState("");
-  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   // 详情加载失败同样禁止保存：此时描述/标签/分类还是空初始值，放行等于
   // 把库中已有数据以空值整体替换——与「加载中」是同一条数据丢失路径
   const [loadFailed, setLoadFailed] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // 详情字段（描述/标签/分类 id）需从服务端取
   useEffect(() => {
@@ -349,34 +336,23 @@ function EditModal({
     return () => {
       cancelled = true;
     };
-  }, [photo.id]);
+    // setError 是 hook 透传的 useState setter，引用恒定——eslint 无法跨自定义
+    // hook 证明稳定性，显式列入 deps 消警告且行为不变
+  }, [photo.id, setError]);
 
   async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/admin/photos/${photo.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          description,
-          categoryId: categoryId === "" ? null : Number(categoryId),
-          tags: tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean),
-        }),
-      });
-      // 失败时保持弹窗打开并提示，避免用户以为已保存
-      if (!res.ok) {
-        setError(await responseError(res));
-        return;
-      }
-      onClose();
-      router.refresh();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setSaving(false);
-    }
+    // 失败时 hook 已写 error 且不调 onSuccess——弹窗保持打开并提示，避免用户
+    // 以为已保存；成功后 onClose + refresh（hook 内）与旧行为逐帧一致
+    await run(
+      `/api/admin/photos/${photo.id}`,
+      jsonInit("PATCH", {
+        title,
+        description,
+        categoryId: categoryId === "" ? null : Number(categoryId),
+        tags: tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean),
+      }),
+      { onSuccess: onClose },
+    );
   }
 
   return (
