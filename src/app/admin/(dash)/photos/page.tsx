@@ -1,18 +1,20 @@
 import AdminPhotosClient from "@/components/admin/AdminPhotosClient";
 import Pagination from "@/components/admin/Pagination";
+import { firstParam, parseYear } from "@/lib/filter-url";
 import { listCategories, listPhotosAdmin, listTags, listYears } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
 interface Props {
+  // 重复参数（?q=a&q=b）运行时是数组——类型如实声明，入口经 firstParam 归一（与前台页面同款）
   searchParams: Promise<{
-    page?: string;
-    category?: string;
-    tag?: string;
-    year?: string;
-    q?: string;
-    status?: string;
-    fav?: string;
+    page?: string | string[];
+    category?: string | string[];
+    tag?: string | string[];
+    year?: string | string[];
+    q?: string | string[];
+    status?: string | string[];
+    fav?: string | string[];
   }>;
 }
 
@@ -20,21 +22,28 @@ const STATUSES = ["all", "published", "unpublished", "missing"] as const;
 
 export default async function AdminPhotosPage({ searchParams }: Props) {
   const sp = await searchParams;
-  const page = Math.max(1, Number(sp.page) || 1);
-  const yearNum = Number(sp.year);
-  const year = Number.isInteger(yearNum) && yearNum > 1970 ? yearNum : undefined;
-  const status = (STATUSES as readonly string[]).includes(sp.status ?? "")
-    ? (sp.status as (typeof STATUSES)[number])
+  const pageParam = firstParam(sp.page);
+  const categoryParam = firstParam(sp.category);
+  const tagParam = firstParam(sp.tag);
+  const yearParam = firstParam(sp.year);
+  const qParam = firstParam(sp.q);
+  const statusParam = firstParam(sp.status);
+  const favParam = firstParam(sp.fav);
+  const page = Math.max(1, Number(pageParam) || 1);
+  // parseYear 与前台三处同源校验（1971..9998）：?year=99999 不再让 yearBounds 产出 Invalid Date 进 Prisma 500
+  const year = parseYear(yearParam);
+  const status = (STATUSES as readonly string[]).includes(statusParam ?? "")
+    ? (statusParam as (typeof STATUSES)[number])
     : "all";
 
   const [{ items, total, pageSize }, categories, tags, years] = await Promise.all([
     listPhotosAdmin({
       page,
-      categorySlug: sp.category || undefined,
-      tag: sp.tag || undefined,
+      categorySlug: categoryParam || undefined,
+      tag: tagParam || undefined,
       year,
-      q: sp.q || undefined,
-      favorite: sp.fav === "1",
+      q: qParam || undefined,
+      favorite: favParam === "1",
       status: status === "all" ? undefined : (status as "published" | "unpublished" | "missing"),
     }),
     listCategories(false),
@@ -55,11 +64,11 @@ export default async function AdminPhotosPage({ searchParams }: Props) {
         <input
           type="search"
           name="q"
-          defaultValue={sp.q ?? ""}
+          defaultValue={qParam ?? ""}
           placeholder="搜索名称…"
           className="h-9 w-44 rounded-lg bg-background border border-edge px-3 outline-none focus:border-foreground/40"
         />
-        <select name="category" defaultValue={sp.category ?? ""} className={selectCls}>
+        <select name="category" defaultValue={categoryParam ?? ""} className={selectCls}>
           <option value="">全部分类</option>
           {categories.map((c) => (
             <option key={c.id} value={c.slug}>
@@ -67,7 +76,7 @@ export default async function AdminPhotosPage({ searchParams }: Props) {
             </option>
           ))}
         </select>
-        <select name="year" defaultValue={sp.year ?? ""} className={selectCls}>
+        <select name="year" defaultValue={yearParam ?? ""} className={selectCls}>
           <option value="">全部年份</option>
           {years.map((y) => (
             <option key={y.year} value={y.year}>
@@ -75,7 +84,7 @@ export default async function AdminPhotosPage({ searchParams }: Props) {
             </option>
           ))}
         </select>
-        <select name="tag" defaultValue={sp.tag ?? ""} className={selectCls}>
+        <select name="tag" defaultValue={tagParam ?? ""} className={selectCls}>
           <option value="">全部标签</option>
           {tags.map((t) => (
             <option key={t.id} value={t.name}>
@@ -90,7 +99,7 @@ export default async function AdminPhotosPage({ searchParams }: Props) {
           <option value="missing">源缺失</option>
         </select>
         <label className="flex items-center gap-1.5 text-muted">
-          <input type="checkbox" name="fav" value="1" defaultChecked={sp.fav === "1"} />
+          <input type="checkbox" name="fav" value="1" defaultChecked={favParam === "1"} />
           仅收藏
         </label>
         <button

@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { listPhotos } from "@/lib/queries";
 import PhotoGrid from "@/components/PhotoGrid";
 
@@ -5,7 +6,13 @@ export const dynamic = "force-dynamic";
 
 export default async function TagPage({ params }: PageProps<"/tag/[name]">) {
   const { name } = await params;
-  const tag = decodeURIComponent(name);
+  let tag: string;
+  try {
+    tag = decodeURIComponent(name);
+  } catch {
+    // 畸形百分号编码（如 /tag/%zz）：URIError 应 404 而非落 error.tsx 呈 500 观感（对齐 category 页先例）
+    notFound();
+  }
   const { items, total, pageSize } = await listPhotos({ tag });
 
   return (

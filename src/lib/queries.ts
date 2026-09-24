@@ -150,6 +150,8 @@ export async function listPhotosAdmin(
   const page = Math.max(1, options.page ?? 1);
   const pageSize = Math.min(96, Math.max(1, options.pageSize ?? (Number(settings.pageSize) || 24)));
   const q = options.q?.trim().slice(0, 64);
+  // 信任边界：year 由调用方（admin photos 页）经 parseYear 校验（1971..9998）；
+  // 新增调用方必须同样走 parseYear——yearBounds 对 ≥9999 构造 Invalid Date 即 500
   const year = options.year && Number.isInteger(options.year) ? yearBounds(options.year) : null;
   const where = {
     ...(options.categorySlug ? { category: { slug: options.categorySlug } } : {}),
@@ -194,6 +196,9 @@ export const getPhotoDetail = cache(async (sha1OrPrefix: string): Promise<PhotoD
   const isFull = /^[a-f0-9]{40}$/i.test(sha1OrPrefix);
   const photo = await prisma.photo.findFirst({
     where: isFull ? { sha1: sha1OrPrefix.toLowerCase() } : { sha1: { startsWith: sha1OrPrefix.toLowerCase() } },
+    // 短前缀碰撞多行时与 resolvePhoto 选同一行（同 min-id）：渲染的 detail 必须就是
+    // 通过 published/missing 判定的那行，否则存在"判定行已发布、渲染行未发布"的泄露路径（评审 H-1）
+    orderBy: { id: "asc" },
     include: {
       category: { select: { name: true, slug: true } },
       photoTags: { include: { tag: true } },

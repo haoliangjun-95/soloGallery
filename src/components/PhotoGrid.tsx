@@ -288,7 +288,7 @@ function PhotoCard({ photo, href, cover, priority }: { photo: PhotoCardDTO; href
             <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
               {[
                 ...(photo.category
-                  ? [{ href: `/category/${photo.category.slug}`, label: photo.category.name }]
+                  ? [{ href: `/category/${encodeURIComponent(photo.category.slug)}`, label: photo.category.name }]
                   : []),
                 ...photo.tags.map((t) => ({ href: `/tag/${encodeURIComponent(t)}`, label: `#${t}` })),
               ]

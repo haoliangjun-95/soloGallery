@@ -141,13 +141,13 @@ export default async function HomePage({ searchParams }: Props) {
             随机漫游
           </RandomWalkLink>
           {categories.map((c) => (
-            <FilterLink key={c.id} href={qs({ category: c.slug })} active={sp.category === c.slug}>
+            <FilterLink key={c.id} href={qs({ category: c.slug })} active={category === c.slug}>
               {c.name}
               {c.count > 0 ? <span className="opacity-50 ml-1">{c.count}</span> : null}
             </FilterLink>
           ))}
           {years.map((y) => (
-            <FilterLink key={y.year} href={qs({ year: String(y.year) })} active={sp.year === String(y.year)}>
+            <FilterLink key={y.year} href={qs({ year: String(y.year) })} active={yearParam === String(y.year)}>
               {y.year}
             </FilterLink>
           ))}
@@ -158,7 +158,7 @@ export default async function HomePage({ searchParams }: Props) {
           <div className="-mx-1 mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto p-1 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
             <span className="shrink-0 pl-2 text-xs text-muted">标签</span>
             {tags.map((t) => (
-              <FilterLink key={t.id} href={qs({ tag: t.name })} active={sp.tag === t.name}>
+              <FilterLink key={t.id} href={qs({ tag: t.name })} active={tag === t.name}>
                 #{t.name}
                 {t.count > 0 ? <span className="opacity-50 ml-1">{t.count}</span> : null}
               </FilterLink>

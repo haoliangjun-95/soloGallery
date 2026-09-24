@@ -177,7 +177,7 @@ export default async function PhotoPage({ params, searchParams }: Props) {
             <div className="mt-3 flex flex-wrap gap-2 text-sm">
               {photo.category ? (
                 <Link
-                  href={`/category/${photo.category.slug}`}
+                  href={`/category/${encodeURIComponent(photo.category.slug)}`}
                   className="rounded-full border border-edge px-3 py-1 text-muted hover:text-foreground"
                 >
                   {photo.category.name}
