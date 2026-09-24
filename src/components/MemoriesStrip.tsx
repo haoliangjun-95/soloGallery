@@ -34,7 +34,6 @@ export default function MemoriesStrip({ memories }: { memories: MemoriesResult }
               <Link
                 key={p.sha1}
                 href={`/photo/${p.sha1}`}
-                title={p.title}
                 className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-card focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2"
               >
                 {/* 缩略图为 MinIO 公共读变体，无需走 next/image 优化代理 */}
@@ -49,7 +48,7 @@ export default function MemoriesStrip({ memories }: { memories: MemoriesResult }
                   className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
                 />
                 {p.favorite ? (
-                  <span className="absolute bottom-1 left-1 text-xs text-amber-400 drop-shadow-[0_1px_2px_rgba(0,0,0,.8)]">
+                  <span aria-hidden className="absolute bottom-1 left-1 text-xs text-amber-400 drop-shadow-[0_1px_2px_rgba(0,0,0,.8)]">
                     ★
                   </span>
                 ) : null}

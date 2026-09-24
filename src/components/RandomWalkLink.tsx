@@ -11,10 +11,13 @@ import { useRouter } from "next/navigation";
 export default function RandomWalkLink({
   className,
   title,
+  active,
   children,
 }: {
   className?: string;
   title?: string;
+  /** 当前正处于随机漫游视图（对齐 FilterLink 的 aria-current 语义） */
+  active?: boolean;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -22,6 +25,7 @@ export default function RandomWalkLink({
     <button
       type="button"
       title={title}
+      aria-current={active ? "page" : undefined}
       onClick={() => router.push(`/?random=${Date.now()}`)}
       className={className}
     >

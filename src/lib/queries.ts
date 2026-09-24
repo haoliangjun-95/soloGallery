@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { displayKey, originalKey } from "./bucket-layout";
 import { publicUrl } from "./config";
 import { prisma } from "./db";
@@ -313,7 +314,8 @@ export async function listPhotosCalendar(): Promise<MonthGroup[]> {
 }
 
 /** 年份分组（按拍摄时间），倒序：[{year: 2026, count: 12}, ...]。publishedOnly=false 时含未发布。 */
-export async function listYears(publishedOnly = true): Promise<{ year: number; count: number }[]> {
+/** 请求级缓存：page.tsx 与 listMemories 同请求各调一次，全表聚合只跑一遍（同 getSettings 模式） */
+export const listYears = cache(async (publishedOnly = true): Promise<{ year: number; count: number }[]> => {
   const { Prisma } = await import("@/generated/prisma/client");
   const cond = publishedOnly ? Prisma.sql`AND published = 1 AND missing = 0` : Prisma.empty;
   // 同 listMonths：年份也按展示时区归属，跨年零点的照片才不会和筛选结果打架
@@ -325,7 +327,7 @@ export async function listYears(publishedOnly = true): Promise<{ year: number; c
     ORDER BY year DESC
   `;
   return rows.map((r) => ({ year: Number(r.year), count: Number(r.count) }));
-}
+});
 
 /** "那年今日"轻量照片卡（横滑条专用，无 exif/文件元数据）。 */
 export interface MemoryPhoto {
@@ -347,15 +349,14 @@ export interface MemoriesResult {
   groups: MemoryGroup[];
 }
 
-/** 一次最多取的 memories 照片数（与日历视图同量级，select 极轻量） */
-const MEMORIES_MAX_PHOTOS = 60;
 /** 单年上限：防止某一年数量碾压其他年份，横滑条失去"跨年回顾"意义 */
 const MEMORIES_PER_YEAR = 12;
 
 /**
  * "那年今日"：往年（不含今年）的今天（展示时区 MM-DD）拍摄的照片，按年分组倒序。
  * 只对库里有照片的年份构造日界 range（复用 listYears），平年 2-29 自动跳过；
- * shotAt range 可走索引，避免 DATE_FORMAT 全表扫。
+ * 每年一个走索引的 range 查询、各取至多 MEMORIES_PER_YEAR 张并行执行——
+ * 若改为全局 OR + take，最近的某个大日子会占满配额，更早年份一张都进不来。
  */
 export async function listMemories(now: Date = new Date()): Promise<MemoriesResult> {
   const monthDay = displayMonthDay(now);
@@ -367,37 +368,36 @@ export async function listMemories(now: Date = new Date()): Promise<MemoriesResu
     .filter((r): r is { year: number; bounds: TimeBounds } => r.bounds !== null);
   if (!ranges.length) return { monthDay, groups: [] };
 
-  const rows = await prisma.photo.findMany({
-    where: {
-      published: true,
-      missing: false,
-      OR: ranges.map((r) => ({ shotAt: { gte: r.bounds.gte, lt: r.bounds.lt } })),
-    },
-    orderBy: { shotAt: "desc" },
-    take: MEMORIES_MAX_PHOTOS,
-    select: { sha1: true, thumbKey: true, title: true, favorite: true, shotAt: true },
-  });
+  // 每年的日界 range 内所有行天然同属该展示日，无需再按 displayMonthKey 归年
+  const perYear = await Promise.all(
+    ranges.map(async (r) => {
+      const rows = await prisma.photo.findMany({
+        where: { published: true, missing: false, shotAt: { gte: r.bounds.gte, lt: r.bounds.lt } },
+        orderBy: { shotAt: "desc" },
+        take: MEMORIES_PER_YEAR,
+        select: { sha1: true, thumbKey: true, title: true, favorite: true },
+      });
+      return { year: r.year, rows };
+    }),
+  );
 
-  const byYear = new Map<number, MemoryPhoto[]>();
-  for (const r of rows) {
-    if (!r.shotAt) continue;
-    // 展示时区归年，与 range 构造同一套换算，归属不会打架
-    const year = Number(displayMonthKey(r.shotAt).slice(0, 4));
-    const photo: MemoryPhoto = {
-      sha1: r.sha1,
-      thumbUrl: publicUrl(r.thumbKey ?? displayKey(r.sha1)),
-      title: r.title,
-      favorite: r.favorite,
-    };
-    const list = byYear.get(year);
-    if (!list) byYear.set(year, [photo]);
-    else if (list.length < MEMORIES_PER_YEAR) list.push(photo);
-  }
   return {
     monthDay,
-    groups: [...byYear.entries()]
-      .sort((a, b) => b[0] - a[0])
-      .map(([year, photos]) => ({ year, yearsAgo: thisYear - year, photos })),
+    groups: perYear
+      .filter((g) => g.rows.length > 0)
+      .sort((a, b) => b.year - a.year)
+      .map((g) => ({
+        year: g.year,
+        yearsAgo: thisYear - g.year,
+        photos: g.rows.map(
+          (r): MemoryPhoto => ({
+            sha1: r.sha1,
+            thumbUrl: publicUrl(r.thumbKey ?? displayKey(r.sha1)),
+            title: r.title,
+            favorite: r.favorite,
+          }),
+        ),
+      })),
   };
 }
 
@@ -412,7 +412,11 @@ const RANDOM_WALK_COUNT = 10;
  * 返回顺序保持抽样顺序。
  */
 export async function listRandomPhotos(count: number = RANDOM_WALK_COUNT): Promise<PhotoCardDTO[]> {
-  const n = Math.max(1, Math.min(count, RANDOM_WALK_COUNT));
+  if (count <= 0) return [];
+  const n = Math.min(count, RANDOM_WALK_COUNT);
+  // 候选池无 orderBy：库超过 RANDOM_CANDIDATE_CAP 后"前 2 万"由存储引擎决定
+  // （近似主键序 = 偏向老照片）。当前规模远低于上限可接受；超限时应改
+  // COUNT + 随机 offset 分段取候选。
   const candidates = await prisma.photo.findMany({
     where: { published: true, missing: false },
     select: { id: true },
@@ -420,6 +424,7 @@ export async function listRandomPhotos(count: number = RANDOM_WALK_COUNT): Promi
   });
   const picked = reservoirSample(candidates, n).map((c) => c.id);
   if (!picked.length) return [];
+  // 回取不复检 published/missing：容忍两段查询之间照片被下架的极小窗口
   const rows = await prisma.photo.findMany({
     where: { id: { in: picked } },
     select: CARD_SELECT,

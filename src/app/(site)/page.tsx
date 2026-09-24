@@ -44,11 +44,12 @@ export default async function HomePage({ searchParams }: Props) {
   const month = /^(\d{4})-(\d{2})$/.test(sp.month ?? "") ? sp.month : undefined;
   // 随机漫游模式：?random=<nonce>（nonce 仅为绕开路由缓存触发重渲染，值本身无意义）
   const isRandom = Boolean(sp.random);
-  // 默认首页（无任何筛选/视图/随机参数）才展示"那年今日"
+  // 默认首页（无筛选/随机参数且非日历视图）才展示"那年今日"；
+  // 其余 view 值（square/masonry…）只影响布局，不排除 memories
   const isDefaultHome =
     !isRandom && !sp.category && !sp.tag && !year && !q && !fav && !month && view !== "calendar";
 
-  const [categories, tags, years, favCount, calendarMonths, memories] = await Promise.all([
+  const [categories, tags, years, favCount, calendarMonths, memories, randomItems] = await Promise.all([
     listCategories(),
     listTags(),
     listYears(),
@@ -56,6 +57,8 @@ export default async function HomePage({ searchParams }: Props) {
     // 日历视图与单月切换都需要月份列表，一次取齐
     view === "calendar" || month ? listMonths() : Promise.resolve([]),
     isDefaultHome ? listMemories() : Promise.resolve(null),
+    // 随机漫游：水塘抽样一批照片；total=items.length 使 PhotoGrid 初始即 done，天然禁用无限滚动
+    isRandom ? listRandomPhotos() : Promise.resolve(null),
   ]);
 
   /** 移动端 chips 组合筛选链接（PC 由侧栏承担）：未提及的维度叠加保留；
@@ -74,13 +77,11 @@ export default async function HomePage({ searchParams }: Props) {
       { unset: "keep" },
     );
 
-  // 日历视图：全量轻量数据按月分组平铺
-  const calendarData = view === "calendar" ? await listPhotosCalendar() : null;
+  // 日历视图：全量轻量数据按月分组平铺（随机模式优先，不取日历数据）
+  const calendarData = view === "calendar" && !isRandom ? await listPhotosCalendar() : null;
 
   // 单月视图数据
   const monthIdx = month ? calendarMonths.findIndex((m) => m.ym === month) : -1;
-  // 随机漫游：水塘抽样一批照片；total=items.length 使 PhotoGrid 初始即 done，天然禁用无限滚动
-  const randomItems = isRandom ? await listRandomPhotos() : null;
   const listing =
     calendarData === null && !isRandom
       ? await listPhotos({ categorySlug: sp.category, tag: sp.tag, year, q, favorite: fav, month })
@@ -99,7 +100,14 @@ export default async function HomePage({ searchParams }: Props) {
         categories={categories}
         tags={tags}
         years={years}
-        totalAll={month || view === "calendar" ? calendarMonths.reduce((s, m) => s + m.count, 0) : total}
+        totalAll={
+          month || view === "calendar"
+            ? calendarMonths.reduce((s, m) => s + m.count, 0)
+            : isRandom
+              ? // 随机模式的 total 是样本量（10），侧栏"全部照片"改用年份聚合的全量计数
+                years.reduce((s, y) => s + y.count, 0)
+              : total
+        }
         totalFav={favCount}
         sp={{ category: sp.category, tag: sp.tag, year: sp.year, q: sp.q, fav: sp.fav, view: sp.view, month: sp.month, random: sp.random }}
       />
@@ -115,6 +123,7 @@ export default async function HomePage({ searchParams }: Props) {
             日历
           </FilterLink>
           <RandomWalkLink
+            active={isRandom}
             className={`inline-flex min-h-11 shrink-0 items-center rounded-full border px-3 py-1 transition-colors focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2 ${
               isRandom ? "border-foreground/60 bg-foreground/10 text-foreground" : "border-edge text-muted hover:text-foreground"
             }`}

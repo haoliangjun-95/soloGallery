@@ -115,6 +115,7 @@ export default async function Sidebar({ categories, tags, years, totalAll, total
           {/* 随机漫游是客户端按钮（每次点击生成新 nonce），非 Link——外观对齐 Item */}
           <RandomWalkLink
             title="随机挑选 10 张照片"
+            active={randomActive}
             className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2 ${
               randomActive ? "bg-white/[0.07] text-white" : "text-[#c9c9c9] hover:bg-white/[0.045] hover:text-white"
             }`}
