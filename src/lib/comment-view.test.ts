@@ -1,6 +1,7 @@
 /**
- * 评论展示纯函数层单测（功能 13）：分页切片 / 步进 / 计数预警阈值。
- * COMMENT_CONTENT_MAX 与评论 API zod 上限、textarea maxLength 单一出处。
+ * 评论展示纯函数层单测（功能 13）：分页切片 / 步进 / 计数预警与超限阈值。
+ * COMMENT_CONTENT_MAX 是评论 API zod .max 与 textarea maxLength 的单一出处
+ * （数值同源；计数口径差异见 comment-view.ts 头注 M-1）。
  */
 import { describe, expect, test } from "vitest";
 import {
@@ -8,13 +9,14 @@ import {
   COMMENT_PAGE_SIZE,
   expandVisible,
   isNearCommentLimit,
+  isOverCommentLimit,
   sliceComments,
 } from "./comment-view";
 
 const nums = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
 describe("常量契约", () => {
-  test("每页 5 条、上限 2000（与 route zod/textarea 一致）", () => {
+  test("每页 5 条、上限 2000（route zod .max / textarea maxLength 单一出处）", () => {
     expect(COMMENT_PAGE_SIZE).toBe(5);
     expect(COMMENT_CONTENT_MAX).toBe(2000);
   });
@@ -69,5 +71,16 @@ describe("isNearCommentLimit", () => {
   test("达到 90% 预警（提醒用户上限将至，而非 maxLength 静默截断）", () => {
     expect(isNearCommentLimit(COMMENT_CONTENT_MAX * 0.9)).toBe(true);
     expect(isNearCommentLimit(COMMENT_CONTENT_MAX)).toBe(true);
+  });
+});
+
+describe("isOverCommentLimit", () => {
+  test("上限内（含恰好等于）不算超限", () => {
+    expect(isOverCommentLimit(0)).toBe(false);
+    expect(isOverCommentLimit(COMMENT_CONTENT_MAX)).toBe(false);
+  });
+
+  test("超上限即超限——浏览器未遵守 maxLength（IME 合成缺陷/程序化写入）时的客户端兜底", () => {
+    expect(isOverCommentLimit(COMMENT_CONTENT_MAX + 1)).toBe(true);
   });
 });

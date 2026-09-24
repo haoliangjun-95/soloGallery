@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   COMMENT_CONTENT_MAX,
   COMMENT_PAGE_SIZE,
   expandVisible,
   isNearCommentLimit,
+  isOverCommentLimit,
   sliceComments,
 } from "@/lib/comment-view";
 import { DISPLAY_TZ } from "@/lib/time";
@@ -33,9 +34,25 @@ export default function CommentSection({
   const [expandedAll, setExpandedAll] = useState(false);
   const shown = sliceComments(comments, visible, expandedAll);
   const hidden = comments.length - shown.length;
+  // 收编 M-2：末次「查看更多」点击后按钮条件卸载，焦点跌回 body（WCAG
+  // 2.4.3）——点击时记录首条新露出下标（= 旧 visible），渲染后把焦点移交
+  // 过去；读屏用户由新聚焦评论被朗读获得展开播报（选焦点移交而非
+  // role=status 替换：后者不解决焦点跌落本身）
+  const listRef = useRef<HTMLUListElement>(null);
+  const pendingFocusRef = useRef<number | null>(null);
+  useEffect(() => {
+    const index = pendingFocusRef.current;
+    if (index === null) return;
+    pendingFocusRef.current = null;
+    const li = listRef.current?.children[index];
+    if (li instanceof HTMLElement) li.focus();
+  }, [visible]);
   const [nickname, setNickname] = useState("");
   const [email, setEmail] = useState("");
   const [content, setContent] = useState("");
+  // 收编 L-4：超限兜底——浏览器未遵守 maxLength（IME 合成缺陷/程序化
+  // 写入）时计数转红 + 禁提交，而非提交后吃服务端 badRequest 无指引
+  const overLimit = isOverCommentLimit(content.length);
   const [honeypot, setHoneypot] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -135,13 +152,22 @@ export default function CommentSection({
           required
           maxLength={COMMENT_CONTENT_MAX}
           rows={3}
+          aria-describedby="comment-content-count"
           className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm outline-none focus:border-foreground/40 resize-y"
         />
-        {/* 功能 13：实时字数计数——maxLength 静默截断改为可见余量，≥90% 琥珀预警 */}
+        {/* 功能 13：实时字数计数——maxLength 静默截断改为可见余量，≥90% 琥珀
+            预警；收编 L-4 超限转红。收编 L-1：id + aria-describedby 把计数与
+            textarea 程序化关联（聚焦时读一次；刻意不加 aria-live——逐键播报
+            「1801 / 2000…」是典型 live-region 轰炸） */}
         <div className="flex justify-end">
           <span
+            id="comment-content-count"
             className={`text-xs tabular-nums ${
-              isNearCommentLimit(content.length) ? "text-amber-400" : "text-muted"
+              overLimit
+                ? "text-red-400"
+                : isNearCommentLimit(content.length)
+                  ? "text-amber-400"
+                  : "text-muted"
             }`}
           >
             {content.length} / {COMMENT_CONTENT_MAX}
@@ -151,7 +177,7 @@ export default function CommentSection({
         {error ? <p className="text-sm text-red-400">{error}</p> : null}
         <button
           type="submit"
-          disabled={submitting || !nickname.trim() || !content.trim()}
+          disabled={submitting || overLimit || !nickname.trim() || !content.trim()}
           className="rounded-lg bg-foreground text-background px-4 py-2 text-sm font-medium disabled:opacity-40 hover:opacity-90"
         >
           {submitting ? "提交中…" : "发表评论"}
@@ -160,9 +186,9 @@ export default function CommentSection({
 
       {comments.length > 0 ? (
         <>
-          <ul className="mt-6 space-y-4">
+          <ul ref={listRef} className="mt-6 space-y-4">
             {shown.map((c) => (
-              <li key={c.id} className="border-t border-edge pt-4 first:border-0 first:pt-0">
+              <li key={c.id} tabIndex={-1} className="border-t border-edge pt-4 first:border-0 first:pt-0">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-sm font-medium">{c.nickname}</span>
                   <time className="text-xs text-muted">{formatTime(c.createdAt)}</time>
@@ -180,7 +206,12 @@ export default function CommentSection({
           {hidden > 0 ? (
             <button
               type="button"
-              onClick={() => setVisible((v) => expandVisible(v, comments.length))}
+              onClick={() => {
+                // 收编 M-2：先记首条新露出下标（= 本次渲染的 visible），
+                // 渲染完成后 effect 把焦点从即将卸载的本按钮移交过去
+                pendingFocusRef.current = visible;
+                setVisible((v) => expandVisible(v, comments.length));
+              }}
               className="mt-4 w-full rounded-lg border border-edge px-4 py-2 text-sm text-muted hover:text-foreground"
             >
               查看更多评论（剩余 {hidden} 条）
