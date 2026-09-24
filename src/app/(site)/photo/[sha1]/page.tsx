@@ -6,6 +6,7 @@ import BackOnEsc from "@/components/BackOnEsc";
 import CommentSection from "@/components/CommentSection";
 import ExifCard from "@/components/ExifCard";
 import PhotoNav from "@/components/PhotoNav";
+import SlideshowButton from "@/components/slideshow/SlideshowButton";
 import ZoomableImage from "@/components/ZoomableImage";
 import { isAdmin } from "@/lib/auth";
 import { DISPLAY_WIDTH } from "@/lib/bucket-layout";
@@ -165,13 +166,19 @@ export default async function PhotoPage({ params, searchParams }: Props) {
             next={adjacent.next ? { href: photoHref(adjacent.next.sha1, navQuery), title: adjacent.next.title } : null}
           />
           <ZoomableImage src={zoomSrc} alt={photo.title} width={photo.width} height={photo.height} />
-          {showOriginalEntry ? (
-            <div className="mt-3 flex items-center justify-between text-sm">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+            {/* 功能 4：幻灯片入口——播放列表与 ←/→ 相邻导航同一列表序（navQuery 上下文透传）；
+                放映用 display WebP 变体而非 zoomSrc（originalView 开启时那是原图直链，HEIC 浏览器无法渲染） */}
+            <SlideshowButton
+              initial={{ sha1: photo.sha1, title: photo.title, displayUrl: photo.displayUrl }}
+              context={navQuery}
+            />
+            {showOriginalEntry ? (
               <a href={photo.originalUrl} target="_blank" rel="noreferrer" className="text-muted hover:text-foreground">
                 ↓ 查看原图（{photo.fileName}）
               </a>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
 
         <div className="space-y-5 lg:sticky lg:top-20">

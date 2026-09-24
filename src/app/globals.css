@@ -66,3 +66,17 @@ html {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* 幻灯片淡入（功能 4）：只动 opacity，合成器友好不碰布局属性；
+   上方 prefers-reduced-motion 全局块会把 animation-duration 压到 0.01ms 自动降级 */
+@keyframes slideshow-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.slideshow-fade {
+  animation: slideshow-fade 600ms ease-out;
+}
