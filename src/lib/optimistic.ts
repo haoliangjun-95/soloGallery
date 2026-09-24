@@ -29,3 +29,13 @@ export function insertAt<T>(items: readonly T[], index: number, item: T): T[] {
   next.splice(index, 0, item);
   return next;
 }
+
+/**
+ * 幂等插回（删除失败的回滚）：目标行已在列表中则原样返回原引用。
+ * DELETE 失败意味着服务端该行始终存在——并发操作成功的 refresh 可能已把
+ * 它随新 props 带回（镜像重置后行已复活），此时盲目 insertAt 会产生重复行
+ * （React key 冲突）。返回原引用让 setState 触发 React bail-out，不白渲染。
+ */
+export function insertIfAbsent<T extends { id: number }>(items: T[], index: number, item: T): T[] {
+  return items.some((it) => it.id === item.id) ? items : insertAt(items, index, item);
+}

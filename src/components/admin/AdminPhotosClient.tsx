@@ -18,7 +18,7 @@ interface Props {
 }
 
 export default function AdminPhotosClient({ items, total, page, pageSize, categories }: Props) {
-  const { busy, error, setError, run } = useAdminAction();
+  const { busy, error, setError, run, refresh } = useAdminAction();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [editing, setEditing] = useState<AdminPhotoDTO | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -50,11 +50,18 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
    * 乐观单行翻转（★ 收藏 / 发布开关）：本地立即生效，失败以反向补丁只回滚本行
    * ——函数式回滚不 clobber 其它 in-flight 行的中间态；错误经 hook 进 ErrorBanner
    * （此前失败时开关静默弹回原状，用户以为是自己点错了）。成功后仍 refresh 回流
-   * 服务端真值兜底一致性。
+   * 服务端真值兜底一致性。patch 类型收窄到服务端实际接受的字段集（route 白名单
+   * published/favorite，宽于契约的字段会被乐观应用但被服务端静默忽略）。
    */
-  async function togglePhoto(id: number, patch: Partial<AdminPhotoDTO>, rollback: Partial<AdminPhotoDTO>) {
+  async function togglePhoto(
+    id: number,
+    patch: Partial<Pick<AdminPhotoDTO, "favorite" | "published">>,
+    rollback: Partial<Pick<AdminPhotoDTO, "favorite" | "published">>,
+  ) {
     if (busy || pendingIds.has(id)) return;
-    setPhotos((prev) => patchById(prev, id, patch));
+    // 显式类型实参：patch 收窄为 Partial<Pick<…>> 后不再能反推 T=AdminPhotoDTO，
+    // 泛型会退化到约束 { id: number }（与本文件 [] 字面量退化 never[] 同一类修法）
+    setPhotos((prev) => patchById<AdminPhotoDTO>(prev, id, patch));
     setPendingIds((prev) => new Set(prev).add(id));
     const ok = await run(`/api/admin/photos/${id}`, jsonInit("PATCH", patch), { quiet: true });
     setPendingIds((prev) => {
@@ -62,7 +69,12 @@ export default function AdminPhotosClient({ items, total, page, pageSize, catego
       next.delete(id);
       return next;
     });
-    if (!ok) setPhotos((prev) => patchById(prev, id, rollback));
+    if (!ok) {
+      setPhotos((prev) => patchById<AdminPhotoDTO>(prev, id, rollback));
+      // 失败路径也回流：点击后镜像可能已被并发 refresh 重置且目标行被外部写过，
+      // 回滚值是点击时的旧快照——refresh 收敛到服务端真值（失败低频，代价可忽略）
+      refresh();
+    }
   }
 
   async function batch(action: string, extra: Record<string, unknown> = {}) {
@@ -292,7 +304,7 @@ function EditModal({
 }) {
   // busy 即「保存中」：加载详情的 GET 不走 run（有独立 loading/loadFailed 态），
   // hook 的 busy 只由 save() 驱动。error 双源共用——加载失败写 setError 进同一
-  // 紧凑错误框（run 开始时 setError(null) 恰好清掉陈旧加载错误，语义正确）
+  // 紧凑错误框（loadFailed 时保存按钮禁用、run 不会启动，加载错误保留至关窗）
   const { busy: saving, error, setError, run } = useAdminAction();
   const [title, setTitle] = useState(photo.title);
   const [description, setDescription] = useState("");
@@ -416,7 +428,9 @@ function EditModal({
           />
         </label>
         {error ? (
-          <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</p>
+          <p role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            {error}
+          </p>
         ) : null}
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-lg border border-edge px-4 py-2 text-sm text-muted hover:text-foreground">

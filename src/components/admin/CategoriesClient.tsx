@@ -22,7 +22,8 @@ export default function CategoriesClient({ initial }: { initial: CategoryDTO[] }
     });
   }
 
-  // rename/remove 经 hook 补上此前缺失的 busy 门——原实现在途时可重复触发请求
+  // rename 经 hook 补上此前缺失的 busy 门（原实现行内重命名双击可重复发 PATCH）；
+  // remove 的 ConfirmDialog 已自带 busy 门，hook 是第二层纵深防御
   async function rename(id: number) {
     const newName = renaming[id]?.trim();
     if (!newName || busy) return;

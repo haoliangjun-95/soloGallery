@@ -21,8 +21,8 @@ export default function TagsClient({ initial }: { initial: TagDTO[] }) {
     });
   }
 
-  // 删除不做乐观（低频 + ConfirmDialog 确认门槛），但经 hook 补上此前缺失的
-  // busy 门——原实现 DELETE 在途时仍可再次触发（重复请求）
+  // 删除不做乐观（低频 + ConfirmDialog 确认门槛）；删除路径 ConfirmDialog 已自带
+  // busy 门（模态遮罩 + await 完成才关闭），hook 的 busy 是第二层纵深防御
   async function remove(id: number) {
     await run(`/api/admin/tags/${id}`, { method: "DELETE" });
   }

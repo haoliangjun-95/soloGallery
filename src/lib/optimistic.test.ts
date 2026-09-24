@@ -5,7 +5,7 @@
  * （快照整体回滚会 clobber 他行的中间态，函数式逐行回滚不会）。
  */
 import { describe, expect, test } from "vitest";
-import { insertAt, patchById, removeById } from "./optimistic";
+import { insertAt, insertIfAbsent, patchById, removeById } from "./optimistic";
 
 interface Row {
   id: number;
@@ -113,5 +113,22 @@ describe("insertAt", () => {
     const restored = insertAt(removed, index, input[index]);
     expect(restored).toEqual(input);
     expect(restored[1]).toBe(input[1]); // 同一对象引用插回
+  });
+});
+
+describe("insertIfAbsent", () => {
+  test("行不存在：等价 insertAt 原位插回", () => {
+    const input = rows();
+    const removed = removeById(input, 2);
+    const restored = insertIfAbsent(removed, 1, input[1]);
+    expect(restored).toEqual(input);
+  });
+
+  test("行已被并发 refresh 带回：幂等不重复插入，返回原引用（React bail-out）", () => {
+    // DELETE 失败 = 服务端行始终在；并发操作成功的 refresh 已把它随 props 回流
+    const input = rows(); // id=2 已在列表中
+    const out = insertIfAbsent(input, 0, input[1]);
+    expect(out).toBe(input);
+    expect(out.filter((r) => r.id === 2).length).toBe(1);
   });
 });

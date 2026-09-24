@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { insertAt, patchById, removeById } from "@/lib/optimistic";
+import { insertIfAbsent, patchById, removeById } from "@/lib/optimistic";
 import { DISPLAY_TZ } from "@/lib/time";
 import type { CommentAdminDTO } from "@/lib/types";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -10,7 +10,7 @@ import ErrorBanner from "./ErrorBanner";
 import { jsonInit, useAdminAction } from "./useAdminAction";
 
 export default function CommentsClient({ initial }: { initial: CommentAdminDTO[] }) {
-  const { busy, error, setError, run } = useAdminAction();
+  const { busy, error, setError, run, refresh } = useAdminAction();
   const [replies, setReplies] = useState<Record<number, string>>({});
   const [pendingRemoveId, setPendingRemoveId] = useState<number | null>(null);
   /** 乐观更新的行级 pending：只禁目标评论的按钮，不再全局 busy 冻结整列表 */
@@ -40,22 +40,31 @@ export default function CommentsClient({ initial }: { initial: CommentAdminDTO[]
    * 乐观 PATCH（通过/标垃圾/回复）：本地立即生效，失败以反向补丁只回滚本行
    * ——函数式回滚不 clobber 其它 in-flight 行的中间态。失败时原来只 refresh、
    * 界面毫无变化致用户反复点同一按钮——现在错误进 ErrorBanner + 本行还原。
+   * patch 类型收窄到服务端实际接受的字段集（route 白名单 status/adminReply，
+   * 宽于契约的字段会被乐观应用但被服务端静默忽略，refresh 前展示分歧）。
    */
   async function patchComment(
     comment: CommentAdminDTO,
-    patch: Partial<CommentAdminDTO>,
-    rollback: Partial<CommentAdminDTO>,
+    patch: Partial<Pick<CommentAdminDTO, "status" | "adminReply">>,
+    rollback: Partial<Pick<CommentAdminDTO, "status" | "adminReply">>,
     onSuccess?: () => void,
   ) {
     if (busy || pendingIds.has(comment.id)) return;
-    setComments((prev) => patchById(prev, comment.id, patch));
+    // 显式类型实参：patch 收窄为 Partial<Pick<…>> 后不再能反推 T=CommentAdminDTO，
+    // 泛型会退化到约束 { id: number }（与 [] 字面量退化 never[] 同一类修法）
+    setComments((prev) => patchById<CommentAdminDTO>(prev, comment.id, patch));
     withPending(comment.id);
     const ok = await run(`/api/admin/comments/${comment.id}`, jsonInit("PATCH", patch), { quiet: true, onSuccess });
     withoutPending(comment.id);
-    if (!ok) setComments((prev) => patchById(prev, comment.id, rollback));
+    if (!ok) {
+      setComments((prev) => patchById<CommentAdminDTO>(prev, comment.id, rollback));
+      // 失败路径也回流：点击后镜像可能已被并发 refresh 重置且目标行被外部写过，
+      // 回滚值是点击时的旧快照——refresh 收敛到服务端真值（失败低频，代价可忽略）
+      refresh();
+    }
   }
 
-  /** 乐观 DELETE：行立即消失，失败按删除前记录的 index 原位插回恢复顺序 */
+  /** 乐观 DELETE：行立即消失，失败按删除前记录的 index 原位幂等插回恢复顺序 */
   async function removeComment(id: number) {
     if (busy || pendingIds.has(id)) return;
     const index = comments.findIndex((c) => c.id === id);
@@ -65,7 +74,12 @@ export default function CommentsClient({ initial }: { initial: CommentAdminDTO[]
     withPending(id);
     const ok = await run(`/api/admin/comments/${id}`, { method: "DELETE" }, { quiet: true });
     withoutPending(id);
-    if (!ok) setComments((prev) => insertAt(prev, index, row));
+    if (!ok) {
+      // 幂等插回：DELETE 失败 = 服务端行始终在，并发操作成功的 refresh 可能已
+      // 把它随 props 带回（镜像重置后行已复活）——盲目 insertAt 会重复行/key 冲突
+      setComments((prev) => insertIfAbsent(prev, index, row));
+      refresh();
+    }
   }
 
   return (
