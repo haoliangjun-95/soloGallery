@@ -7,7 +7,7 @@ import { createLogger } from "./logger";
 import { mergeManifests, parseManifest, type ManifestSnapshot, type MergedItem } from "./manifest";
 import { exists, getBuffer, listKeys, putBuffer } from "./s3";
 import { sniffImage } from "./sniff";
-import { getSettings } from "./settings";
+import { readSettings } from "./settings";
 
 const logger = createLogger("sync");
 
@@ -298,7 +298,8 @@ export async function runSync(trigger: "manual" | "cron"): Promise<SyncSummary> 
     const [{ snapshots }, thumbs, settings] = await Promise.all([
       loadLatestManifests(),
       buildThumbIndex(),
-      getSettings(),
+      // 后台长驻上下文，必须原始读取（请求缓存会让设置变更永不生效）
+      readSettings(),
     ]);
     const autoPublish = settings.syncAutoPublish === "true";
     const merged = mergeManifests(snapshots);
@@ -438,7 +439,8 @@ export async function runSync(trigger: "manual" | "cron"): Promise<SyncSummary> 
 /** 每分钟由 instrumentation 调用：到达间隔或从未同步过则触发。 */
 export async function syncTick(): Promise<void> {
   try {
-    const settings = await getSettings();
+    // instrumentation 每分钟调用的后台上下文，同上：原始读取
+    const settings = await readSettings();
     const intervalMin = Math.max(1, Number(settings.syncIntervalMinutes) || 15);
     // 看最新一条任意状态的记录：RUNNING 说明本进程/其他进程正在跑（runSync 内有僵尸接管），不重复触发
     const last = await prisma.syncRun.findFirst({ orderBy: { startedAt: "desc" } });
