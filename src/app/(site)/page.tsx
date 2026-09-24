@@ -143,6 +143,19 @@ export default async function HomePage({ searchParams }: Props) {
           ))}
         </div>
 
+        {/* 移动端标签横滑行（PC 标签维度在左侧栏）：与分类/年份 chips 同一套叠加筛选语义 */}
+        {tags.length > 0 ? (
+          <div className="-mx-1 mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto p-1 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
+            <span className="shrink-0 pl-2 text-xs text-muted">标签</span>
+            {tags.map((t) => (
+              <FilterLink key={t.id} href={qs({ tag: t.name })} active={sp.tag === t.name}>
+                #{t.name}
+                {t.count > 0 ? <span className="opacity-50 ml-1">{t.count}</span> : null}
+              </FilterLink>
+            ))}
+          </div>
+        ) : null}
+
         {isRandom ? (
           <div className="mb-6 flex flex-wrap items-center gap-3">
             <h1 className="text-xl font-semibold">
