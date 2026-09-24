@@ -37,10 +37,13 @@ describe("hideGps", () => {
     gps: { lat: 24.48, lon: 114.53, location: "广东省 深圳市" },
   };
 
-  it("裁剪 gps 返回新对象，其余字段保留，原对象不被污染（不可变）", () => {
+  it("裁剪 gps 返回新对象，gps 键整键不存在，原对象不被污染（不可变）", () => {
     const hidden = hideGps(exif);
     expect(hidden).not.toBe(exif);
     expect(hidden?.gps).toBeUndefined();
+    // RSC flight 序列化把 undefined 编成 "$undefined" 占位符保留键（不同于 JSON.stringify 丢键）——
+    // 裁剪对象必须键真正不存在，client 侧 "gps" in exif 判断才可靠（评审 L-1）
+    expect(hidden && "gps" in hidden).toBe(false);
     expect(hidden).toMatchObject({ make: "Canon", model: "EOS R5", focalLength: 35 });
     expect(exif.gps.location).toBe("广东省 深圳市");
   });

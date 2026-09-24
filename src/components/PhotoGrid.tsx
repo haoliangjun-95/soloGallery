@@ -38,6 +38,9 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
   const [done, setDone] = useState(initialItems.length >= total);
   /** 翻页加载失败：哨兵位置不变时 IO 不会重新触发，静默 catch 会卡死——置 error 态给显式重试入口 */
   const [error, setError] = useState(false);
+  /** error 的 ref 镜像：IO 回调据此屏蔽错误态自动重发。若只靠 state，失败后 loading 翻转
+   *  → loadMore 新身份 → observer 重挂 → 规范强制的初始回调 → 哨兵仍在视口 → 无限自动重试（评审 H-1） */
+  const errorRef = useRef(false);
   /** 回到顶部按钮可见性：顶部哨兵滚出视口后显示 */
   const [showTop, setShowTop] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -66,7 +69,9 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
       setPage(next);
       setDone(next * pageSize >= data.total || data.items.length === 0);
     } catch {
-      // 不再静默：error 态渲染"加载失败，点击重试"；用户滚离再滚回也可经 IO 自动重发
+      // 不再静默：error 态渲染"加载失败，点击重试"；ref 镜像同步置位，
+      // IO 自动重发被屏蔽——重试只能经显式按钮，杜绝失败→observer 重挂→自动重取的死循环（评审 H-1）
+      errorRef.current = true;
       setError(true);
     } finally {
       setLoading(false);
@@ -78,7 +83,8 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
     if (!el) return;
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) void loadMore();
+        // 错误态不触发：observer 重挂时的规范初始回调也会被 errorRef 挡住（评审 H-1）
+        if (entries[0]?.isIntersecting && !errorRef.current) void loadMore();
       },
       { rootMargin: "600px" },
     );
@@ -225,7 +231,11 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
         <div className="pb-8 text-center">
           <button
             type="button"
-            onClick={() => void loadMore()}
+            onClick={() => {
+              // 显式重试：先解除 errorRef 屏蔽再重发，成功/失败都由 loadMore 内部状态机接管
+              errorRef.current = false;
+              void loadMore();
+            }}
             className="min-h-11 rounded-full border border-amber-500/40 bg-amber-500/10 px-4 text-sm text-amber-300 transition-colors hover:bg-amber-500/20 focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2"
           >
             加载失败，点击重试

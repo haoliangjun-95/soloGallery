@@ -28,11 +28,16 @@ export function gpsLabel(gps: GeoPoint): string {
 /**
  * 隐私裁剪（exposeGps 关闭时公开 DTO 用）：返回剔除 gps 的 exif 副本；
  * 无 gps 原引用返回，避免整批列表的无谓拷贝。管理端路径不经此函数。
- * gps: undefined 在 JSON 序列化时整个键被丢弃——API 响应面同样不含坐标。
+ * 副本上 delete 整键移除而非 `gps: undefined`：JSON.stringify 两者等价（丢键），但
+ * RSC flight 序列化把 undefined 编成 "$undefined" 占位符**保留键**跨 server→client
+ * 边界——裁剪对象上键必须真正不存在，client 侧 `"gps" in exif` 判断才可靠（评审 L-1）。
+ * delete 作用于新建副本，入参不被触碰（不可变语义与解构写法等价）。
  */
 export function hideGps(exif: NormalizedExif | null): NormalizedExif | null {
   if (!exif?.gps) return exif;
-  return { ...exif, gps: undefined };
+  const rest: NormalizedExif = { ...exif };
+  delete rest.gps;
+  return rest;
 }
 
 /**

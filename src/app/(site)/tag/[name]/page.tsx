@@ -4,10 +4,9 @@ import PhotoGrid from "@/components/PhotoGrid";
 export const dynamic = "force-dynamic";
 
 export default async function TagPage({ params }: PageProps<"/tag/[name]">) {
-  const { name } = await params;
   // Next 路由匹配层已完成解码（params 即明文），畸形 %zz 在框架层抛 DecodeError → 400。
   // 页面再 decode 属双重解码：含 % 的合法标签会 URIError 误 404（50%off）或静默查错值（C%AB）（评审 M-1）
-  const tag = name;
+  const { name: tag } = await params; // 直接解构重命名，免 `const tag = name` 别名行（评审 L-5）
   const { items, total, pageSize } = await listPhotos({ tag });
 
   return (
