@@ -45,6 +45,12 @@ export function parseGearParam(value: string | undefined): string | undefined {
  * JSON_UNQUOTE(JSON_EXTRACT(...)) 的四种可能形态：
  * SQL NULL（键不存在）、JSON null 字面量（字符串 "null"）、空串、真实值。
  * 前三种一律视为"无器材信息"。
+ *
+ * 依赖注记（评审 L-1）：此处 trim 只作用于聚合展示/链接标签，而 gearWhere 的
+ * equals 匹配的是**原始存储值**——两者一致的前提是写路径 extractExif→cleanString
+ * 已在入库前 trim（exif.ts）。历史遗留的未 trim 行会出现「侧栏计数 > 0 但筛选
+ * 列表为空」的错位（技术债清单有记录）；纯 equals 无法防御该形态，勿在展示侧
+ * 单独"修复"造成两侧标签不一致。
  */
 function cleanGearValue(value: string | null | undefined): string | undefined {
   const v = value?.trim();

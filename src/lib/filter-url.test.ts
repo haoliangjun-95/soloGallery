@@ -168,3 +168,42 @@ describe("contextToParams — photoHref 与 loadMore 共用的上下文序列化
     expect(photoHref("abc123", ctx)).toBe(`/photo/abc123?${contextToParams(ctx).toString()}`);
   });
 });
+
+describe("器材词汇表（功能 3）— make/model/lens 维度（评审 M-1 补测）", () => {
+  it("Sidebar 相机点击：新 make+model 组合清空 lens 维度（互斥重置语义，Sidebar 依赖此行为）", () => {
+    expect(buildFilterUrl({ make: "Canon", model: "EOS R5", lens: "RF50" }, { make: "Sony", model: "A7M4" })).toBe(
+      "/?make=Sony&model=A7M4",
+    );
+  });
+
+  it("patch 显式 model: undefined 同样清除 model（相机链接不带 model 时防跨机型维度残留）", () => {
+    expect(buildFilterUrl({ make: "Canon", model: "EOS R5" }, { make: "Sony", model: undefined })).toBe("/?make=Sony");
+  });
+
+  it("移动端「全部」chip：keep 模式一次性 null 清空全部器材维度，无残留视图时得 /", () => {
+    expect(
+      buildFilterUrl(
+        { q: "sunset", make: "Canon", model: "EOS R5", lens: "RF50" },
+        { q: null, make: null, model: null, lens: null },
+        { unset: "keep" },
+      ),
+    ).toBe("/");
+  });
+
+  it("buildFilterUrl 按 category,make,model,lens,view 规范顺序序列化（FILTER_KEYS 重排会静默破坏既有链接，此测试即哨兵）", () => {
+    expect(buildFilterUrl({}, { view: "fixed", lens: "L", model: "M2", make: "M1", category: "C" })).toBe(
+      "/?category=C&make=M1&model=M2&lens=L&view=fixed",
+    );
+  });
+
+  it("contextToParams 器材维度位于 fav 后 month 前（详情页/loadMore 词汇表同源同序）", () => {
+    const params = contextToParams({ month: "2024-06", lens: "L", model: "M2", make: "M1", fav: true });
+    expect(params.toString()).toBe("fav=1&make=M1&model=M2&lens=L&month=2024-06");
+  });
+
+  it("photoHref 透传器材上下文且值经 URL 编码可往返解析", () => {
+    const href = photoHref("abc123", { make: "Canon", model: "EOS R5", lens: "RF 50mm" });
+    expect(href).toBe("/photo/abc123?make=Canon&model=EOS+R5&lens=RF+50mm");
+    expect(new URL(href, "http://x").searchParams.get("model")).toBe("EOS R5");
+  });
+});
