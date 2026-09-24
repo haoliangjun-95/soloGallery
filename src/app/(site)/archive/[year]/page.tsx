@@ -104,9 +104,11 @@ export default async function ArchivePage({ params }: Props) {
                       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                     {p.favorite ? (
+                      /* role="img" 让 aria-label 生效——无 role 的泛型元素上 aria-label 被辅助技术忽略（评审 L-3） */
                       <span
-                        className="absolute left-2 top-2 text-base text-amber-400 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]"
+                        role="img"
                         aria-label="收藏"
+                        className="absolute left-2 top-2 text-base text-amber-400 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]"
                       >
                         ★
                       </span>

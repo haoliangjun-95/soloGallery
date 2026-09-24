@@ -30,6 +30,16 @@ describe("buildArchiveYear", () => {
     expect(out[0].photos.map((p) => p.sha1)).toEqual(["f1", "f2", "n1", "n2"]);
   });
 
+  it("收藏优先于截断：favorite 即使输入序在 perMonth 之外也入选（评审 M-1——先截断后排序的回归变体能通过其余全部测试，唯此用例能钉住「排序先于 slice」的实现顺序）", () => {
+    const rows = [
+      ...Array.from({ length: 8 }, (_, i) => row("2024-05", `n${i}`)),
+      row("2024-05", "f1", true), // 最旧 → shotAt 倒序输入下排最后，落在缺省 perMonth=8 截断线之外
+    ];
+    const out = buildArchiveYear(rows, 2024);
+    expect(out[0].photos.map((p) => p.sha1)).toEqual(["f1", "n0", "n1", "n2", "n3", "n4", "n5", "n6"]);
+    expect(out[0].total).toBe(9);
+  });
+
   it("perMonth 截断：photos 只留前 perMonth 张，total 仍报该月全量（UI「共 X 张 · 精选 N」）", () => {
     const rows = Array.from({ length: 5 }, (_, i) => row("2024-05", `p${i}`));
     const out = buildArchiveYear(rows, 2024, 2);
