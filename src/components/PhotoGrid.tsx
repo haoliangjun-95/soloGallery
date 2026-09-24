@@ -36,7 +36,13 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(initialItems.length >= total);
+  /** 翻页加载失败：哨兵位置不变时 IO 不会重新触发，静默 catch 会卡死——置 error 态给显式重试入口 */
+  const [error, setError] = useState(false);
+  /** 回到顶部按钮可见性：顶部哨兵滚出视口后显示 */
+  const [showTop, setShowTop] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
+  const hasItems = items.length > 0;
 
   // initialItems 变化时的重置由父组件通过 key 重挂载实现（见各页面），
   // 避免 effect 内同步 setState 的级联渲染反模式。
@@ -44,6 +50,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
   const loadMore = useCallback(async () => {
     if (loading || done) return;
     setLoading(true);
+    setError(false);
     try {
       const next = page + 1;
       // 与 photoHref 共用 contextToParams：参数词汇表单一出处，后续页与详情链接语义恒一致
@@ -59,7 +66,8 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
       setPage(next);
       setDone(next * pageSize >= data.total || data.items.length === 0);
     } catch {
-      /* 网络抖动：下次滚动重试 */
+      // 不再静默：error 态渲染"加载失败，点击重试"；用户滚离再滚回也可经 IO 自动重发
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -78,6 +86,26 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
     return () => io.disconnect();
   }, [loadMore]);
 
+  // 回到顶部可见性：顶部哨兵（含 200px 缓冲）滚出视口才显示；
+  // hasItems 作依赖——空列表提前返回路径不渲染哨兵，从空翻非空时需重挂 observer
+  useEffect(() => {
+    if (!hasItems) return;
+    const el = topSentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => setShowTop(!entries[0]?.isIntersecting),
+      { rootMargin: "200px 0px 0px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasItems]);
+
+  const scrollToTop = useCallback(() => {
+    // globals.css 的 prefers-reduced-motion 降级只覆盖 CSS 动画，JS 平滑滚动需显式判断
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+  }, []);
+
   if (!items.length) {
     return (
       <div className="py-24 text-center text-muted">
@@ -88,6 +116,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
 
   return (
     <div>
+      <div ref={topSentinelRef} aria-hidden className="h-px" />
       {view === "square" ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-1 sm:gap-1.5">
           {items.map((photo) => (
@@ -192,9 +221,32 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
       )}
 
       <div ref={sentinelRef} className="h-10" />
-      <div className="text-center text-xs text-muted pb-8">
-        {done ? `共 ${total} 张` : loading ? "加载中…" : ""}
-      </div>
+      {error ? (
+        <div className="pb-8 text-center">
+          <button
+            type="button"
+            onClick={() => void loadMore()}
+            className="min-h-11 rounded-full border border-amber-500/40 bg-amber-500/10 px-4 text-sm text-amber-300 transition-colors hover:bg-amber-500/20 focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2"
+          >
+            加载失败，点击重试
+          </button>
+        </div>
+      ) : (
+        <div className="text-center text-xs text-muted pb-8">
+          {done ? `共 ${total} 张` : loading ? "加载中…" : ""}
+        </div>
+      )}
+      {showTop ? (
+        <div className="pb-8 text-center">
+          <button
+            type="button"
+            onClick={scrollToTop}
+            className="inline-flex min-h-11 items-center rounded-full border border-edge bg-background/70 px-4 text-sm text-muted backdrop-blur transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2"
+          >
+            ↑ 回到顶部
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
