@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
 import { createHash } from "node:crypto";
 import { badRequest, guardAdmin, json } from "@/lib/api";
-import { displayKey, originalKey } from "@/lib/bucket-layout";
+import { displayKey, GRID_WIDTHS, gridKey, originalKey } from "@/lib/bucket-layout";
 import { prisma } from "@/lib/db";
 import { extractExif } from "@/lib/exif";
 import type { GeoPoint, NormalizedExif } from "@/lib/exif";
 import { reverseGeocode } from "@/lib/geo";
-import { generateDisplay } from "@/lib/image-pipeline";
+import { generateDisplay, generateGridVariants, type GridVariant } from "@/lib/image-pipeline";
 import { createLogger } from "@/lib/logger";
 import { putBuffer } from "@/lib/s3";
 import { sniffImage } from "@/lib/sniff";
@@ -99,9 +99,31 @@ export async function POST(request: NextRequest) {
         logger.warn(`display 生成失败 ${file.name}`, err);
       }
 
+      // 功能 10：网格变体从 display WebP 派生（best-effort——失败不影响
+      // 原图/display 入库，gridReady=false 前台退回 src，行为同老照片）
+      let grid: GridVariant[] = [];
+      if (webp) {
+        try {
+          grid = await generateGridVariants(webp);
+        } catch (err) {
+          logger.warn(`grid 变体生成失败 ${file.name}`, err);
+        }
+      }
+
       // 与壁纸软件的内容寻址约定一致：原图原样存 objects/<sha1>
       await putBuffer(originalKey(sha1), buf, sniff.mimeType);
       if (webp) await putBuffer(displayKey(sha1), webp, "image/webp");
+      // 变体全或无：任一上传失败即 gridReady=false——半套 srcset 会让浏览器
+      // 在缺档上 404 且不回落 src；孤儿对象无害（键确定，重传即同名覆盖）
+      let gridReady = false;
+      if (grid.length === GRID_WIDTHS.length) {
+        try {
+          for (const v of grid) await putBuffer(gridKey(sha1, v.width), v.webp, "image/webp");
+          gridReady = true;
+        } catch (err) {
+          logger.warn(`grid 变体上传失败 ${file.name}`, err);
+        }
+      }
 
       const fileName = /\.[A-Za-z0-9]{2,5}$/.test(file.name) ? file.name : `${file.name}.${sniff.format.toLowerCase()}`;
       const created = await prisma.photo.create({
@@ -116,6 +138,7 @@ export async function POST(request: NextRequest) {
           fileSize: BigInt(buf.length),
           width: width ?? null,
           height: height ?? null,
+          gridReady,
           published: false,
           shotAt: exif?.shotAt ? new Date(exif.shotAt) : null,
           exif: exif ? (exif as unknown as object) : undefined,

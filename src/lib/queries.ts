@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { displayKey, originalKey } from "./bucket-layout";
+import { buildGridSrcset, displayKey, originalKey } from "./bucket-layout";
 import { publicUrl } from "./config";
 import { prisma } from "./db";
 import { getSettings } from "./settings";
@@ -57,6 +57,7 @@ type CardSource = {
   format: string;
   fileSize: bigint;
   thumbKey: string | null;
+  gridReady: boolean;
   width: number | null;
   height: number | null;
   shotAt: Date | null;
@@ -77,6 +78,9 @@ function toCard(p: CardSource): PhotoCardDTO {
     format: p.format,
     fileSize: Number(p.fileSize),
     thumbUrl: p.thumbKey ? publicUrl(p.thumbKey) : publicUrl(display),
+    // 功能 10：变体存在才输出 srcset（老照片 null → img 无 srcSet 属性，
+    // 浏览器沿用 src）；键纯 sha1 派生，publicUrl 以 toUrl 注入纯构造器
+    thumbSrcset: p.gridReady ? buildGridSrcset(p.sha1, publicUrl) : null,
     displayUrl: publicUrl(display),
     width: p.width,
     height: p.height,
@@ -97,6 +101,7 @@ const CARD_SELECT = {
   format: true,
   fileSize: true,
   thumbKey: true,
+  gridReady: true,
   width: true,
   height: true,
   shotAt: true,

@@ -10,6 +10,10 @@ export interface PhotoCardDTO {
   format: string;
   fileSize: number;
   thumbUrl: string;
+  /** 网格变体 srcset 描述符串（"…-400w.webp 400w, …-800w.webp 800w"，功能 10）；
+   *  未生成变体（老照片 gridReady=false）为 null——浏览器对 srcset 候选专用、
+   *  失败不回落 src，必须条件省略而非恒输出 */
+  thumbSrcset: string | null;
   displayUrl: string;
   width: number | null;
   height: number | null;

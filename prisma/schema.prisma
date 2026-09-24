@@ -67,6 +67,10 @@ model Photo {
   width       Int?
   height      Int?
   thumbKey    String?     @db.VarChar(255)
+  // 功能 10：display/<sha1>-{400,800}w.webp 网格变体是否已生成。键由 sha1
+  // 确定性派生（同 displayKey），标志只表存在性；老照片为 false，前台条件
+  // 省略 srcset 退回 src（浏览器选定 srcset 候选后失败不回落，必须条件输出）
+  gridReady   Boolean     @default(false)
   categoryId  Int?
   category    Category?   @relation("PhotoCategory", fields: [categoryId], references: [id], onDelete: SetNull)
   coverOf     Category?   @relation("CategoryCover")

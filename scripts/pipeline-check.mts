@@ -1,13 +1,14 @@
 /**
  * 无数据库的核心管线自检：夹具生成（EXIF 注入）→ 嗅探 → EXIF 提取 →
- * display 生成 → manifest 归并。快速验证同步引擎依赖的纯逻辑，不需要 MySQL。
+ * display 生成 → grid 变体 → manifest 归并。快速验证同步引擎依赖的纯逻辑，不需要 MySQL。
  *   npx tsx scripts/pipeline-check.ts
  */
 import crypto from "node:crypto";
+import sharp from "sharp";
 import { buildItems, phase1Manifests } from "./fixtures.mjs";
 import { sniffImage } from "../src/lib/sniff";
 import { extractExif } from "../src/lib/exif";
-import { generateDisplay } from "../src/lib/image-pipeline";
+import { generateDisplay, generateGridVariants } from "../src/lib/image-pipeline";
 import { mergeManifests, parseManifest } from "../src/lib/manifest";
 
 let failures = 0;
@@ -36,6 +37,18 @@ const disp = await generateDisplay(items[1].jpeg); // 竖图 900x1350
 assert(disp.webp.length > 1000, `display WebP 生成（${disp.webp.length} bytes）`);
 assert(disp.displayWidth === 900, `竖图不放大（display ${disp.displayWidth}x${disp.displayHeight}）`);
 assert(disp.width === 900 && disp.height === 1350, `原始尺寸（${disp.width}x${disp.height}）`);
+
+// 功能 10：grid 变体从 display WebP 派生；900w 竖图 → 400/800 两档都是真实缩小
+const grid = await generateGridVariants(disp.webp);
+assert(
+  grid.length === 2 && grid[0].width === 400 && grid[1].width === 800,
+  `grid 变体档位（${grid.map((g) => `${g.width}w/${g.webp.length}B`).join(" ")}）`,
+);
+const g0 = await sharp(grid[0].webp).metadata();
+const g1 = await sharp(grid[1].webp).metadata();
+assert(g0.width === 400 && g0.height === 600 && g0.format === "webp", `400w 档实际尺寸/格式（${g0.width}x${g0.height}/${g0.format}）`);
+assert(g1.width === 800 && g1.height === 1200 && g1.format === "webp", `800w 档实际尺寸/格式（${g1.width}x${g1.height}/${g1.format}）`);
+assert(grid[0].webp.length < disp.webp.length && grid[1].webp.length < disp.webp.length, "变体字节数小于 display（缩小有效）");
 
 const snapshots = phase1Manifests(items).map((m) => ({
   deviceId: m.device,

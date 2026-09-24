@@ -28,6 +28,19 @@ interface Props {
 /** 首屏图片 eager 预载数量：瀑布/固定卡片布局首屏全 lazy 会推迟 LCP、快速滚动时占位抖动 */
 const EAGER_FIRST_SCREEN = 8;
 
+/** srcset sizes 预算（功能 10）：按各视图 CSS 列布局推算，断点对齐列数跳变。
+ *  宁可略高估——浏览器只会选大一档候选，不会糊。thumbSrcset 为 null（老照片
+ *  未生成变体）时不输出 srcSet，浏览器沿用 src，sizes 被忽略。 */
+/** 瀑布列（normal/masonry 共用）：columns-2 → sm:3 → xl:4 → 2xl:5 → min-2800:6 */
+const SIZES_COLUMNS =
+  "(min-width: 2800px) 17vw, (min-width: 1536px) 20vw, (min-width: 1280px) 25vw, (min-width: 640px) 33vw, 50vw";
+/** 固定卡片（cover）：minmax(160px|40vw) → sm:230px → xl:290px，瓦片宽约 250-360px */
+const SIZES_FIXED_CARD = "(min-width: 1280px) 25vw, (min-width: 640px) 33vw, 45vw";
+/** 正方形纯图格：minmax(160px,1fr) auto-fill，瓦片宽恒 160-190px */
+const SIZES_SQUARE = "190px";
+/** 列表视图：h-10 w-16 固定 64px 宽小图 */
+const SIZES_LIST = "64px";
+
 export default function PhotoGrid({ initialItems, total, pageSize, view = "normal", query }: Props) {
   /** 详情链接统一附带当前筛选上下文——详情页"上一张/下一张"据此在同一列表序中取相邻 */
   const photoLink = (sha1: string) => photoHref(sha1, query ?? {});
@@ -134,6 +147,8 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
             >
               <img
                 src={photo.thumbUrl}
+                srcSet={photo.thumbSrcset ?? undefined}
+                sizes={SIZES_SQUARE}
                 alt={photo.title}
                 loading="lazy"
                 decoding="async"
@@ -157,6 +172,8 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
             >
               <img
                 src={photo.thumbUrl}
+                srcSet={photo.thumbSrcset ?? undefined}
+                sizes={SIZES_COLUMNS}
                 alt={photo.title}
                 width={photo.width ?? undefined}
                 height={photo.height ?? undefined}
@@ -196,6 +213,8 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
               >
                 <img
                   src={photo.thumbUrl}
+                  srcSet={photo.thumbSrcset ?? undefined}
+                  sizes={SIZES_LIST}
                   alt={photo.title}
                   loading="lazy"
                   decoding="async"
@@ -316,6 +335,8 @@ function PhotoCard({ photo, href, cover, priority }: { photo: PhotoCardDTO; href
           {/* 图片为 MinIO 公共读 WebP 变体，无需走 next/image 优化代理 */}
           <img
             src={photo.thumbUrl}
+            srcSet={photo.thumbSrcset ?? undefined}
+            sizes={cover ? SIZES_FIXED_CARD : SIZES_COLUMNS}
             alt={photo.title}
             width={cover ? undefined : (photo.width ?? undefined)}
             height={cover ? undefined : (photo.height ?? undefined)}

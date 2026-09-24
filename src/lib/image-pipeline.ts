@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { sniffImage } from "./sniff";
-import { DISPLAY_QUALITY, DISPLAY_WIDTH } from "./bucket-layout";
+import { DISPLAY_QUALITY, DISPLAY_WIDTH, GRID_QUALITY, GRID_WIDTHS } from "./bucket-layout";
 
 export interface DisplayResult {
   webp: Buffer;
@@ -59,4 +59,30 @@ export async function generateDisplay(buf: Buffer): Promise<DisplayResult> {
     displayWidth: info.width,
     displayHeight: info.height,
   };
+}
+
+export interface GridVariant {
+  width: number; // 档位标称宽（srcset 描述符用它；小图不放大时实际宽可能更小）
+  webp: Buffer;
+}
+
+/**
+ * 网格宽度档变体（功能 10）：从 display WebP 派生而非原图——display 已 EXIF
+ * 转正、已解码（HEIC 转换只在 generateDisplay 发生一次），缩小尺寸开销极低；
+ * 1920w q82 → ≤800w q78 的二次有损在网格展示尺寸下视觉不可辨。
+ * withoutEnlargement：display 宽不足档位时该档按实际宽输出（描述符仍标称，
+ * 浏览器按描述符选档，超小图轻微放大属可接受边界）。
+ * 任一档失败整体抛错——调用方 best-effort 处理：gridReady=false 退回 src，
+ * 绝不输出半套 srcset（浏览器选定候选后失败不回落 src，半套 = 概率碎图）。
+ */
+export async function generateGridVariants(displayWebp: Buffer): Promise<GridVariant[]> {
+  return Promise.all(
+    GRID_WIDTHS.map(async (width) => ({
+      width,
+      webp: await sharp(displayWebp, { failOn: "none" })
+        .resize({ width, withoutEnlargement: true })
+        .webp({ quality: GRID_QUALITY })
+        .toBuffer(),
+    })),
+  );
 }
