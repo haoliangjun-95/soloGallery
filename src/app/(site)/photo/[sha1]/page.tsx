@@ -77,7 +77,7 @@ function ogDimensions(width: number | null, height: number | null): { width: num
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { sha1 } = await params;
-  const key = decodeURIComponent(sha1).toLowerCase();
+  const key = sha1.toLowerCase(); // params 已由 Next 路由层解码；纯 hex 无需 decode，%zz 序列交 SHA1_KEY_RE 兜底（评审 L-8）
   if (!SHA1_KEY_RE.test(key)) return {};
   const resolved = await resolvePhoto(key);
   // 不可见照片（未发布/缺失且非管理员）不输出任何元数据——分享卡片不泄露其标题与图像
@@ -108,7 +108,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function PhotoPage({ params, searchParams }: Props) {
   const { sha1 } = await params;
-  const key = decodeURIComponent(sha1).toLowerCase();
+  const key = sha1.toLowerCase(); // params 已由 Next 路由层解码；纯 hex 无需 decode，%zz 序列交 SHA1_KEY_RE 兜底（评审 L-8）
   if (!SHA1_KEY_RE.test(key)) notFound();
 
   const resolved = await resolvePhoto(key);

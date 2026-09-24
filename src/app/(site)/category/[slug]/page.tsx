@@ -7,14 +7,8 @@ export const dynamic = "force-dynamic";
 export default async function CategoryPage({
   params,
 }: PageProps<"/category/[slug]">) {
-  const { slug: rawSlug } = await params;
-  // 中文 slug 经浏览器会以百分号编码到达，比较前先解码
-  let slug = rawSlug;
-  try {
-    slug = decodeURIComponent(rawSlug);
-  } catch {
-    /* 已是明文 */
-  }
+  // Next 路由匹配层已完成解码，中文 slug 到达 params 时即明文，无需（也不应）二次 decode（评审 M-1 同族）
+  const { slug } = await params;
   const categories = await listCategories();
   const category = categories.find((c) => c.slug === slug);
   if (!category) notFound();
