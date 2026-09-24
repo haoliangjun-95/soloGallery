@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFilterUrl } from "./filter-url";
+import { buildFilterUrl, photoHref } from "./filter-url";
 
 const FULL_CURRENT = {
   category: "travel",
@@ -79,5 +79,35 @@ describe("buildFilterUrl — keep（移动端 chips 叠加组合语义）", () =
         { unset: "keep" },
       ),
     ).toBe("/?view=masonry");
+  });
+});
+
+describe("photoHref — 详情页上下文透传", () => {
+  it("无上下文时返回裸详情链接", () => {
+    expect(photoHref("abc123")).toBe("/photo/abc123");
+    expect(photoHref("abc123", {})).toBe("/photo/abc123");
+  });
+
+  it("上下文按 category,tag,year,q,fav,month 规范顺序序列化", () => {
+    expect(
+      photoHref("abc123", { month: "2024-06", fav: true, q: "x", year: 2024, tag: "t", category: "c" }),
+    ).toBe("/photo/abc123?category=c&tag=t&year=2024&q=x&fav=1&month=2024-06");
+  });
+
+  it("空值/undefined/false 一律不输出", () => {
+    expect(photoHref("abc123", { category: "", q: undefined, fav: false, month: "" })).toBe(
+      "/photo/abc123",
+    );
+  });
+
+  it("fav 为 true 时输出 1（对齐首页 fav 语义）", () => {
+    expect(photoHref("abc123", { fav: true })).toBe("/photo/abc123?fav=1");
+  });
+
+  it("值经 URL 编码且可往返解析", () => {
+    const href = photoHref("abc123", { tag: "海边日落", q: "sun set" });
+    const parsed = new URLSearchParams(href.slice(href.indexOf("?") + 1));
+    expect(parsed.get("tag")).toBe("海边日落");
+    expect(parsed.get("q")).toBe("sun set");
   });
 });

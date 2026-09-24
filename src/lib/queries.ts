@@ -98,15 +98,16 @@ const CARD_SELECT = {
   photoTags: { select: { tag: { select: { name: true } } } },
 } as const;
 
-export async function listPhotos(options: ListOptions = {}): Promise<{ items: PhotoCardDTO[]; total: number; page: number; pageSize: number }> {
-  const settings = await getSettings();
-  const page = Math.max(1, options.page ?? 1);
-  const pageSize = Math.min(96, Math.max(1, options.pageSize ?? (Number(settings.pageSize) || 24)));
+/**
+ * listPhotos 与 getAdjacentPhotos 共用的可见性 + 筛选 where 构造——
+ * 详情页"上一张/下一张"必须与列表用同一套筛选语义，否则相邻关系会错位。
+ */
+function buildListWhere(options: ListOptions) {
   const q = options.q?.trim().slice(0, 64);
   // 年/月边界统一走展示时区（lib/time），与日历分组、月份列表保持同一套换算
   const month = options.month ? monthBounds(options.month) : null;
   const year = options.year ? yearBounds(options.year) : null;
-  const where = {
+  return {
     ...(options.publishedOnly === false ? {} : { published: true }),
     ...(options.includeMissing ? {} : { missing: false }),
     ...(options.categorySlug ? { category: { slug: options.categorySlug } } : {}),
@@ -116,6 +117,13 @@ export async function listPhotos(options: ListOptions = {}): Promise<{ items: Ph
     ...(q ? { OR: [{ title: { contains: q } }, { fileName: { contains: q } }] } : {}),
     ...(options.favorite ? { favorite: true } : {}),
   };
+}
+
+export async function listPhotos(options: ListOptions = {}): Promise<{ items: PhotoCardDTO[]; total: number; page: number; pageSize: number }> {
+  const settings = await getSettings();
+  const page = Math.max(1, options.page ?? 1);
+  const pageSize = Math.min(96, Math.max(1, options.pageSize ?? (Number(settings.pageSize) || 24)));
+  const where = buildListWhere(options);
   const [rows, total] = await Promise.all([
     prisma.photo.findMany({
       where,
@@ -181,7 +189,8 @@ export async function listPhotosAdmin(
   };
 }
 
-export async function getPhotoDetail(sha1OrPrefix: string): Promise<PhotoDetailDTO | null> {
+/** 请求级缓存：详情页 generateMetadata 与页面主体共用一次抓取（fetch memoization 不覆盖 Prisma）。 */
+export const getPhotoDetail = cache(async (sha1OrPrefix: string): Promise<PhotoDetailDTO | null> => {
   const isFull = /^[a-f0-9]{40}$/i.test(sha1OrPrefix);
   const photo = await prisma.photo.findFirst({
     where: isFull ? { sha1: sha1OrPrefix.toLowerCase() } : { sha1: { startsWith: sha1OrPrefix.toLowerCase() } },
@@ -219,6 +228,108 @@ export async function getPhotoDetail(sha1OrPrefix: string): Promise<PhotoDetailD
     comments,
     originalUrl: `/api/photos/${photo.sha1}/original`,
   };
+});
+
+export interface AdjacentPhoto {
+  sha1: string;
+  title: string;
+}
+
+export interface AdjacentPhotos {
+  /** 列表序中前一张（较新，列表靠前） */
+  prev: AdjacentPhoto | null;
+  /** 列表序中后一张（较旧，列表靠后） */
+  next: AdjacentPhoto | null;
+}
+
+const ADJACENT_SELECT = { sha1: true, title: true };
+
+/**
+ * 指定筛选上下文下、按列表排序（shotAt desc, createdAt desc，与 listPhotos 一致）
+ * 取相邻照片，sha1 须为完整值。
+ *
+ * MariaDB 默认 NULL 排序（ASC 在前 / DESC 在后）与 listPhotos 的隐式行为一致：
+ * shotAt 为 null 的照片恒排在列表末尾。
+ * - 当前照片 shotAt 非空：next 用 (lt) OR (eq 且 createdAt lt) OR (null) 三条件，
+ *   DESC 序 take 1 天然取到"列表中的下一张"（非空段的下一张，或空段的第一张）；
+ *   prev 用 (gt) OR (eq 且 createdAt gt)，NULL 不参与 >/< 比较故自然被排除。
+ * - 当前照片 shotAt 为 null（实践数据中几乎不存在）：next 只在 null 段内按
+ *   createdAt 找；prev 先取非空段最后一张（ASC 序最小），全库皆 null 才退回 createdAt。
+ *
+ * 相邻条件与 buildListWhere（q 筛选会产生顶层 OR）用 AND 组合，避免键覆盖。
+ * 两张照片 (shotAt, createdAt) 完全相同时先后未定义——与列表分页自身的
+ * skip/take 边界行为一致，不做额外决胜。
+ */
+export async function getAdjacentPhotos(
+  sha1: string,
+  options: ListOptions = {},
+): Promise<AdjacentPhotos> {
+  const where = buildListWhere(options);
+  const cur = await prisma.photo.findFirst({
+    where: { ...where, sha1 },
+    select: { shotAt: true, createdAt: true },
+  });
+  if (!cur) return { prev: null, next: null };
+
+  const findNext = (): Promise<AdjacentPhoto | null> =>
+    cur.shotAt
+      ? prisma.photo.findFirst({
+          where: {
+            AND: [
+              where,
+              {
+                OR: [
+                  { shotAt: { lt: cur.shotAt } },
+                  { shotAt: cur.shotAt, createdAt: { lt: cur.createdAt } },
+                  { shotAt: null },
+                ],
+              },
+            ],
+          },
+          orderBy: [{ shotAt: "desc" }, { createdAt: "desc" }],
+          select: ADJACENT_SELECT,
+        })
+      : prisma.photo.findFirst({
+          where: { AND: [where, { shotAt: null, createdAt: { lt: cur.createdAt } }] },
+          orderBy: { createdAt: "desc" },
+          select: ADJACENT_SELECT,
+        });
+
+  const findPrev = async (): Promise<AdjacentPhoto | null> => {
+    if (cur.shotAt) {
+      return prisma.photo.findFirst({
+        where: {
+          AND: [
+            where,
+            {
+              OR: [
+                { shotAt: { gt: cur.shotAt } },
+                { shotAt: cur.shotAt, createdAt: { gt: cur.createdAt } },
+              ],
+            },
+          ],
+        },
+        orderBy: [{ shotAt: "asc" }, { createdAt: "asc" }],
+        select: ADJACENT_SELECT,
+      });
+    }
+    const lastNonNull = await prisma.photo.findFirst({
+      where: { AND: [where, { shotAt: { not: null } }] },
+      orderBy: [{ shotAt: "asc" }, { createdAt: "asc" }],
+      select: ADJACENT_SELECT,
+    });
+    return (
+      lastNonNull ??
+      prisma.photo.findFirst({
+        where: { AND: [where, { shotAt: null, createdAt: { gt: cur.createdAt } }] },
+        orderBy: { createdAt: "asc" },
+        select: ADJACENT_SELECT,
+      })
+    );
+  };
+
+  const [prev, next] = await Promise.all([findPrev(), findNext()]);
+  return { prev, next };
 }
 
 export async function listCategories(publishedOnly = true): Promise<CategoryDTO[]> {

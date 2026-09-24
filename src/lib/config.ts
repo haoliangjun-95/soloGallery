@@ -31,4 +31,9 @@ export function publicUrl(key: string): string {
     .join("/")}`;
 }
 
+/** 站点对外基地址（sitemap / OG 卡片 / canonical 共用）；未配置 SITE_URL 时回退本地开发地址。 */
+export function siteUrl(): string {
+  return (process.env.SITE_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+}
+
 export { BUCKET_LAYOUT };

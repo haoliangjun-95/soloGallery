@@ -11,6 +11,7 @@ import {
   formatShotDateShort,
   formatShotYear,
 } from "@/lib/exif-format";
+import { photoHref, type PhotoContext } from "@/lib/filter-url";
 import { formatGps, gpsLabel } from "@/lib/geo";
 import type { PhotoCardDTO } from "@/lib/types";
 
@@ -20,13 +21,17 @@ interface Props {
   pageSize: number;
   /** normal：瀑布+信息卡；square：正方形纯图；fixed：统一正方形卡片+信息卡（cover 裁切）；masonry：瀑布纯图；list：列表 */
   view?: "normal" | "square" | "fixed" | "masonry" | "list";
-  query?: { category?: string; tag?: string; year?: number; q?: string; fav?: boolean; month?: string };
+  /** 当前列表的筛选上下文：透传到详情页链接，使"上一张/下一张"沿同一列表序 */
+  query?: PhotoContext;
 }
 
 /** 首屏图片 eager 预载数量：瀑布/固定卡片布局首屏全 lazy 会推迟 LCP、快速滚动时占位抖动 */
 const EAGER_FIRST_SCREEN = 8;
 
 export default function PhotoGrid({ initialItems, total, pageSize, view = "normal", query }: Props) {
+  /** 详情链接统一附带当前筛选上下文——详情页"上一张/下一张"据此在同一列表序中取相邻 */
+  const photoLink = (sha1: string) => photoHref(sha1, query ?? {});
+
   const [items, setItems] = useState(initialItems);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -92,7 +97,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
           {items.map((photo) => (
             <Link
               key={photo.sha1}
-              href={`/photo/${photo.sha1}`}
+              href={photoLink(photo.sha1)}
               className="group relative block aspect-square overflow-hidden bg-card"
               title={photo.title}
             >
@@ -116,7 +121,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
           {items.map((photo, idx) => (
             <Link
               key={photo.sha1}
-              href={`/photo/${photo.sha1}`}
+              href={photoLink(photo.sha1)}
               className="group relative mb-3 lg:mb-4 block break-inside-avoid overflow-hidden rounded-xl border border-edge focus-visible:-outline-offset-2"
             >
               <img
@@ -143,7 +148,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
         // auto-fill 自适应列数（手机 2 列 / 平板笔记本 3 列 / 大屏 5-6 列），间距 6px 对齐 PhotoPrism
         <div className="grid grid-cols-[repeat(auto-fill,minmax(min(160px,40vw),1fr))] sm:grid-cols-[repeat(auto-fill,minmax(230px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-1.5 items-start">
           {items.map((photo, idx) => (
-            <PhotoCard key={photo.sha1} photo={photo} cover priority={idx < EAGER_FIRST_SCREEN} />
+            <PhotoCard key={photo.sha1} photo={photo} href={photoLink(photo.sha1)} cover priority={idx < EAGER_FIRST_SCREEN} />
           ))}
         </div>
       ) : view === "list" ? (
@@ -155,7 +160,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
             return (
               <Link
                 key={photo.sha1}
-                href={`/photo/${photo.sha1}`}
+                href={photoLink(photo.sha1)}
                 className="flex items-center gap-3 px-3 py-1.5 hover:bg-foreground/5 transition-colors"
               >
                 <img
@@ -185,7 +190,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
       ) : (
         <div className="columns-2 sm:columns-3 xl:columns-4 2xl:columns-5 min-[2800px]:columns-6 gap-3 lg:gap-4 [column-fill:_balance]">
           {items.map((photo, idx) => (
-            <PhotoCard key={photo.sha1} photo={photo} priority={idx < EAGER_FIRST_SCREEN} />
+            <PhotoCard key={photo.sha1} photo={photo} href={photoLink(photo.sha1)} priority={idx < EAGER_FIRST_SCREEN} />
           ))}
         </div>
       )}
@@ -200,7 +205,7 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
 
 /** 单张卡片：图 + 收藏星标 + 标题/分类/标签/拍摄信息（参考用户给的样图布局）。
  *  cover=true 时图片固定正方形裁切铺满，用于固定宽高视图（PhotoPrism Cards 风格）。 */
-function PhotoCard({ photo, cover, priority }: { photo: PhotoCardDTO; cover?: boolean; priority?: boolean }) {
+function PhotoCard({ photo, href, cover, priority }: { photo: PhotoCardDTO; href: string; cover?: boolean; priority?: boolean }) {
   const exif = photo.exif;
   const meta: { icon: React.ReactNode; text: string; title?: string }[] = [];
 
@@ -249,7 +254,7 @@ function PhotoCard({ photo, cover, priority }: { photo: PhotoCardDTO; cover?: bo
       }`}
     >
       <div className={cover ? "relative aspect-square overflow-hidden bg-card" : "relative"}>
-        <Link href={`/photo/${photo.sha1}`} className={`block focus-visible:-outline-offset-2${cover ? " h-full" : ""}`}>
+        <Link href={href} className={`block focus-visible:-outline-offset-2${cover ? " h-full" : ""}`}>
           {/* 图片为 MinIO 公共读 WebP 变体，无需走 next/image 优化代理 */}
           <img
             src={photo.thumbUrl}
@@ -276,7 +281,7 @@ function PhotoCard({ photo, cover, priority }: { photo: PhotoCardDTO; cover?: bo
         {/* 标题最多两行；标签独立排列，更多标签可进入详情查看。 */}
         <div className="min-w-0">
           <Link
-            href={`/photo/${photo.sha1}`}
+            href={href}
             className="min-w-0 line-clamp-2 break-words text-sm font-medium leading-5 hover:underline"
             title={photo.title}
           >
@@ -303,7 +308,7 @@ function PhotoCard({ photo, cover, priority }: { photo: PhotoCardDTO; cover?: bo
                   </Link>
                 ))}
               {photo.tags.length + (photo.category ? 1 : 0) > 2 ? (
-                <Link href={`/photo/${photo.sha1}`} aria-label={`查看照片详情，含其余 ${photo.tags.length + (photo.category ? 1 : 0) - 2} 个标签`} className="shrink-0 rounded px-1.5 py-0.5 text-xs text-muted hover:text-foreground">
+                <Link href={href} aria-label={`查看照片详情，含其余 ${photo.tags.length + (photo.category ? 1 : 0) - 2} 个标签`} className="shrink-0 rounded px-1.5 py-0.5 text-xs text-muted hover:text-foreground">
                   +{photo.tags.length + (photo.category ? 1 : 0) - 2}
                 </Link>
               ) : null}

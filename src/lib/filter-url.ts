@@ -56,3 +56,32 @@ export function buildFilterUrl(
   const s = params.toString();
   return s ? `/?${s}` : "/";
 }
+
+/**
+ * 详情页链接携带的筛选上下文（列表页透传，用于"上一张/下一张"在同一列表序中取相邻照片）。
+ * 与首页 searchParams 维度一致，但不含 view（布局不影响顺序）与 random（随机样本无稳定相邻关系）。
+ */
+export interface PhotoContext {
+  category?: string;
+  tag?: string;
+  year?: number;
+  q?: string;
+  fav?: boolean;
+  month?: string;
+}
+
+/**
+ * 构造 /photo/{sha1} 链接，按 category,tag,year,q,fav,month 规范顺序附加上下文参数；
+ * 空值一律省略，fav 仅 true 时输出 "1"（与 buildFilterUrl 的 fav 语义对齐）。
+ */
+export function photoHref(sha1: string, ctx: PhotoContext = {}): string {
+  const params = new URLSearchParams();
+  if (ctx.category) params.set("category", ctx.category);
+  if (ctx.tag) params.set("tag", ctx.tag);
+  if (ctx.year) params.set("year", String(ctx.year));
+  if (ctx.q) params.set("q", ctx.q);
+  if (ctx.fav) params.set("fav", "1");
+  if (ctx.month) params.set("month", ctx.month);
+  const s = params.toString();
+  return s ? `/photo/${sha1}?${s}` : `/photo/${sha1}`;
+}
