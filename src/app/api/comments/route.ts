@@ -3,6 +3,7 @@ import { z } from "zod";
 import { badRequest, json } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
+import { buildCommentNotifyMessage, sendNotify } from "@/lib/notify";
 import { clientIp, rateAllow } from "@/lib/ratelimit";
 import { checkSpam } from "@/lib/spam";
 import { getSettings } from "@/lib/settings";
@@ -42,7 +43,8 @@ export async function POST(request: NextRequest) {
 
   const photo = await prisma.photo.findFirst({
     where: { id: parsed.data.photoId, published: true, missing: false },
-    select: { id: true },
+    // sha1/title 供通知拼详情链接与标题（功能 14），同表字段零额外查询
+    select: { id: true, sha1: true, title: true },
   });
   if (!photo) return badRequest("图片不存在或未发布");
 
@@ -75,6 +77,24 @@ export async function POST(request: NextRequest) {
       ip,
     },
   });
+
+  // 功能 14：IM 通知 fire-and-forget 旁路——复用已取的 settings（零额外 DB
+  // 读）；void 不 await，sendNotify 内部永不抛出（失败只 warn），评论响应
+  // 不受推送延迟/失败影响。SPAM 路径刻意不通知（上方已提前 return）
+  void sendNotify(
+    {
+      provider: settings.notifyProvider,
+      webhookUrl: settings.notifyWebhookUrl,
+      chatId: settings.notifyChatId,
+    },
+    buildCommentNotifyMessage({
+      nickname: parsed.data.nickname,
+      content: parsed.data.content,
+      photoTitle: photo.title || photo.sha1.slice(0, 12),
+      moderated,
+      photoUrl: `${new URL(request.url).origin}/photo/${photo.sha1}`,
+    }),
+  );
 
   const message = moderated ? "评论已提交，审核通过后会显示" : "评论成功";
   return json({ ok: true, moderated, message });

@@ -13,6 +13,11 @@ interface SettingsShape {
   syncAutoPublish: string;
   originalView: string;
   exposeGps: string;
+  /** 评论 IM 通知（功能 14）："" 关闭 | "serverchan" | "telegram" */
+  notifyProvider: string;
+  notifyWebhookUrl: string;
+  /** telegram 专用 chat_id；serverchan 忽略 */
+  notifyChatId: string;
 }
 
 export default function SettingsClient({ initial }: { initial: SettingsShape }) {
@@ -25,6 +30,9 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
     syncAutoPublish: initial.syncAutoPublish === "true",
     originalView: initial.originalView === "true",
     exposeGps: initial.exposeGps === "true",
+    notifyProvider: initial.notifyProvider,
+    notifyWebhookUrl: initial.notifyWebhookUrl,
+    notifyChatId: initial.notifyChatId,
   });
   const [logo, setLogo] = useState(initial.siteLogo);
   const [logoBusy, setLogoBusy] = useState(false);
@@ -257,6 +265,56 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
           </span>
         </span>
       </label>
+
+      {/* 评论 IM 通知（功能 14）。选项值与 lib/notify.ts NOTIFY_PROVIDERS 对齐
+          （UI 刻意不 import——避免把含 fetch 副作用的模块拉进客户端包；
+          服务端 settings API 以 parseNotifyProvider 白名单校验兜底） */}
+      <div className="space-y-3 border-t border-edge pt-5">
+        <label className="block space-y-1 text-sm">
+          <span className="text-muted">评论 IM 通知</span>
+          <select
+            value={form.notifyProvider}
+            onChange={(e) => setForm({ ...form, notifyProvider: e.target.value })}
+            className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm outline-none focus:border-foreground/40"
+          >
+            <option value="">关闭</option>
+            <option value="serverchan">Server酱（微信）</option>
+            <option value="telegram">Telegram Bot</option>
+          </select>
+        </label>
+        {form.notifyProvider ? (
+          <>
+            <label className="block space-y-1 text-sm">
+              <span className="text-muted">Webhook URL</span>
+              <input
+                type="url"
+                placeholder={
+                  form.notifyProvider === "telegram"
+                    ? "https://api.telegram.org/bot<token>/sendMessage"
+                    : "https://sctapi.ftqq.com/<SendKey>.send"
+                }
+                value={form.notifyWebhookUrl}
+                onChange={(e) => setForm({ ...form, notifyWebhookUrl: e.target.value })}
+                className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm outline-none focus:border-foreground/40"
+              />
+            </label>
+            {form.notifyProvider === "telegram" ? (
+              <label className="block space-y-1 text-sm">
+                <span className="text-muted">Chat ID</span>
+                <input
+                  value={form.notifyChatId}
+                  onChange={(e) => setForm({ ...form, notifyChatId: e.target.value })}
+                  placeholder="如 -1001234567890（频道/群组为负数）"
+                  className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm outline-none focus:border-foreground/40"
+                />
+              </label>
+            ) : null}
+            <p className="text-xs text-muted">
+              有新评论（含待审核）入库时推送一条即时提醒；推送失败仅记服务端日志，不影响评论提交
+            </p>
+          </>
+        ) : null}
+      </div>
 
       <div className="flex items-center gap-3">
         <button

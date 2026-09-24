@@ -11,6 +11,12 @@ export const SETTING_DEFAULTS = {
   originalView: "false",
   /** 公开页面/API 是否暴露 EXIF GPS。默认公开（现状）；置 "false" 后管理端仍可见 */
   exposeGps: "true",
+  /** 评论 IM 通知（功能 14）："" 关闭 | "serverchan" | "telegram"（lib/notify.ts 解析） */
+  notifyProvider: "",
+  /** webhook 完整 URL：Server酱 sctapi.ftqq.com/<SendKey>.send；Telegram bot<token>/sendMessage */
+  notifyWebhookUrl: "",
+  /** Telegram 专用 chat_id；Server酱忽略此键 */
+  notifyChatId: "",
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
