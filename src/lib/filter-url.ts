@@ -71,10 +71,10 @@ export interface PhotoContext {
 }
 
 /**
- * 构造 /photo/{sha1} 链接，按 category,tag,year,q,fav,month 规范顺序附加上下文参数；
- * 空值一律省略，fav 仅 true 时输出 "1"（与 buildFilterUrl 的 fav 语义对齐）。
+ * 序列化 PhotoContext 为规范顺序（category,tag,year,q,fav,month）的 URLSearchParams；
+ * photoHref 与 PhotoGrid.loadMore 共用，参数词汇表的唯一出处。
  */
-export function photoHref(sha1: string, ctx: PhotoContext = {}): string {
+export function contextToParams(ctx: PhotoContext): URLSearchParams {
   const params = new URLSearchParams();
   if (ctx.category) params.set("category", ctx.category);
   if (ctx.tag) params.set("tag", ctx.tag);
@@ -82,6 +82,39 @@ export function photoHref(sha1: string, ctx: PhotoContext = {}): string {
   if (ctx.q) params.set("q", ctx.q);
   if (ctx.fav) params.set("fav", "1");
   if (ctx.month) params.set("month", ctx.month);
-  const s = params.toString();
+  return params;
+}
+
+/**
+ * 构造 /photo/{sha1} 链接，按规范顺序附加上下文参数；
+ * 空值一律省略，fav 仅 true 时输出 "1"（与 buildFilterUrl 的 fav 语义对齐）。
+ */
+export function photoHref(sha1: string, ctx: PhotoContext = {}): string {
+  const s = contextToParams(ctx).toString();
   return s ? `/photo/${sha1}?${s}` : `/photo/${sha1}`;
+}
+
+/**
+ * searchParams 归一化：重复参数（?q=a&q=b）运行时是数组而非声明的 string，
+ * 直接调用字符串方法会抛 TypeError。统一取首元素后再做业务校验。
+ */
+export function firstParam(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+/** 年份下界（不含）：EXIF/胶片数字化之前的年份无意义，沿袭既有校验。 */
+const YEAR_MIN_EXCLUSIVE = 1970;
+/** 年份上界（含）：≥9999 时 yearBounds 构造的日期串是 Invalid Date，进 Prisma 即 500。 */
+const YEAR_MAX_INCLUSIVE = 9998;
+
+/**
+ * 解析年份筛选参数：整数且 1971..9998，否则 undefined。
+ * 首页 / 详情页 / /api/photos 三处同源，消除上界校验漂移。
+ */
+export function parseYear(value: string | undefined): number | undefined {
+  const n = Number(value);
+  if (!Number.isInteger(n)) return undefined;
+  if (n <= YEAR_MIN_EXCLUSIVE || n > YEAR_MAX_INCLUSIVE) return undefined;
+  return n;
 }

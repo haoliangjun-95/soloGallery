@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { buildFilterUrl, type FilterPatch } from "@/lib/filter-url";
+import { buildFilterUrl, firstParam, parseYear, type FilterPatch } from "@/lib/filter-url";
 import {
   countFavorites,
   listCategories,
@@ -20,34 +20,44 @@ import Sidebar from "@/components/Sidebar";
 export const dynamic = "force-dynamic";
 
 interface Props extends PageProps<"/"> {
+  /** 重复参数（?q=a&q=b）运行时是数组——类型如实声明，入口经 firstParam 归一 */
   searchParams: Promise<{
-    category?: string;
-    tag?: string;
-    year?: string;
-    q?: string;
-    fav?: string;
-    view?: string;
-    month?: string;
-    random?: string;
+    category?: string | string[];
+    tag?: string | string[];
+    year?: string | string[];
+    q?: string | string[];
+    fav?: string | string[];
+    view?: string | string[];
+    month?: string | string[];
+    random?: string | string[];
   }>;
 }
 
 export default async function HomePage({ searchParams }: Props) {
   const sp = await searchParams;
-  const year = Number.isInteger(Number(sp.year)) && Number(sp.year) > 1970 ? Number(sp.year) : undefined;
-  const q = sp.q?.trim().slice(0, 64) || undefined;
-  const fav = sp.fav === "1";
+  // 统一归一化：重复参数取首元素；year 与详情页/API 同源 parseYear（1971..9998，防 Invalid Date 进 Prisma）
+  const category = firstParam(sp.category);
+  const tag = firstParam(sp.tag);
+  const yearParam = firstParam(sp.year);
+  const year = parseYear(yearParam);
+  const qRaw = firstParam(sp.q);
+  const q = qRaw?.trim().slice(0, 64) || undefined;
+  const favParam = firstParam(sp.fav);
+  const fav = favParam === "1";
+  const viewParam = firstParam(sp.view);
+  const monthParam = firstParam(sp.month);
+  const randomParam = firstParam(sp.random);
   // 无 view 参数时默认固定宽高视图；normal 不再是默认，需显式 ?view=normal
-  const view = (["normal", "square", "fixed", "masonry", "list", "calendar"] as const).includes(sp.view as never)
-    ? (sp.view as "normal" | "square" | "fixed" | "masonry" | "list" | "calendar")
+  const view = (["normal", "square", "fixed", "masonry", "list", "calendar"] as const).includes(viewParam as never)
+    ? (viewParam as "normal" | "square" | "fixed" | "masonry" | "list" | "calendar")
     : "fixed";
-  const month = /^(\d{4})-(\d{2})$/.test(sp.month ?? "") ? sp.month : undefined;
+  const month = /^(\d{4})-(\d{2})$/.test(monthParam ?? "") ? monthParam : undefined;
   // 随机漫游模式：?random=<nonce>（nonce 仅为绕开路由缓存触发重渲染，值本身无意义）
-  const isRandom = Boolean(sp.random);
+  const isRandom = Boolean(randomParam);
   // 默认首页（无筛选/随机参数且非日历视图）才展示"那年今日"；
   // 其余 view 值（square/masonry…）只影响布局，不排除 memories
   const isDefaultHome =
-    !isRandom && !sp.category && !sp.tag && !year && !q && !fav && !month && view !== "calendar";
+    !isRandom && !category && !tag && !year && !q && !fav && !month && view !== "calendar";
 
   const [categories, tags, years, favCount, calendarMonths, memories, randomItems] = await Promise.all([
     listCategories(),
@@ -66,12 +76,12 @@ export default async function HomePage({ searchParams }: Props) {
   const qs = (patch: FilterPatch) =>
     buildFilterUrl(
       {
-        category: sp.category,
-        tag: sp.tag,
-        year: sp.year,
-        q: sp.q,
+        category,
+        tag,
+        year: yearParam,
+        q: qRaw,
         fav: fav ? "1" : undefined,
-        view: sp.view,
+        view: viewParam,
       },
       patch,
       { unset: "keep" },
@@ -84,7 +94,7 @@ export default async function HomePage({ searchParams }: Props) {
   const monthIdx = month ? calendarMonths.findIndex((m) => m.ym === month) : -1;
   const listing =
     calendarData === null && !isRandom
-      ? await listPhotos({ categorySlug: sp.category, tag: sp.tag, year, q, favorite: fav, month })
+      ? await listPhotos({ categorySlug: category, tag, year, q, favorite: fav, month })
       : null;
   const total = randomItems ? randomItems.length : listing ? listing.total : 0;
   const pageSize = listing ? listing.pageSize : 60;
@@ -109,13 +119,13 @@ export default async function HomePage({ searchParams }: Props) {
               : total
         }
         totalFav={favCount}
-        sp={{ category: sp.category, tag: sp.tag, year: sp.year, q: sp.q, fav: sp.fav, view: sp.view, month: sp.month, random: sp.random }}
+        sp={{ category, tag, year: yearParam, q: qRaw, fav: favParam, view: viewParam, month: monthParam, random: randomParam }}
       />
 
       <div className="min-w-0">
         {/* 移动端筛选栏（PC 走左侧栏） */}
         <div className="-mx-1 mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto p-1 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
-          <FilterLink href={qs({ category: null, tag: null, year: null, q: null, fav: null })} active={!sp.category && !sp.tag && !sp.year && !fav && !month}>
+          <FilterLink href={qs({ category: null, tag: null, year: null, q: null, fav: null })} active={!category && !tag && !yearParam && !fav && !month}>
             全部
           </FilterLink>
           {fav ? null : <FilterLink href={qs({ fav: "1" })} active={fav}>★ 收藏</FilterLink>}
@@ -201,13 +211,13 @@ export default async function HomePage({ searchParams }: Props) {
           <h1 className="text-xl font-semibold mb-6">
             {year} 年 <span className="text-sm text-muted font-normal">{total} 张</span>
           </h1>
-        ) : sp.category ? (
+        ) : category ? (
           <h1 className="text-xl font-semibold mb-6">
-            {categories.find((c) => c.slug === sp.category)?.name ?? sp.category} <span className="text-sm text-muted font-normal">{total} 张</span>
+            {categories.find((c) => c.slug === category)?.name ?? category} <span className="text-sm text-muted font-normal">{total} 张</span>
           </h1>
-        ) : sp.tag ? (
+        ) : tag ? (
           <h1 className="text-xl font-semibold mb-6">
-            #{sp.tag} <span className="text-sm text-muted font-normal">{total} 张</span>
+            #{tag} <span className="text-sm text-muted font-normal">{total} 张</span>
           </h1>
         ) : view === "calendar" ? (
           <h1 className="text-xl font-semibold mb-6">日历</h1>
@@ -219,12 +229,12 @@ export default async function HomePage({ searchParams }: Props) {
           <CalendarView months={calendarData} />
         ) : (
           <PhotoGrid
-            key={`${sp.category ?? ""}|${sp.tag ?? ""}|${sp.year ?? ""}|${q ?? ""}|${fav ? "fav" : ""}|${view}|${month ?? ""}|${sp.random ?? ""}|${total}`}
+            key={`${category ?? ""}|${tag ?? ""}|${yearParam ?? ""}|${q ?? ""}|${fav ? "fav" : ""}|${view}|${month ?? ""}|${randomParam ?? ""}|${total}`}
             initialItems={items}
             total={total}
             pageSize={pageSize}
             view={view === "calendar" ? "normal" : view}
-            query={{ category: sp.category, tag: sp.tag, year, q, fav, month }}
+            query={{ category, tag, year, q, fav, month }}
           />
         )}
       </div>

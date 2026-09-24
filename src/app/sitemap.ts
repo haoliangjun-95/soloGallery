@@ -16,14 +16,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         orderBy: { updatedAt: "desc" },
       })
       .catch(() => []),
-    listCategories().catch(() => []),
-    listTags().catch(() => []),
+    // count=0 的列表页不提交（空页面收录无意义，还可能被判定为低质）
+    listCategories().then((cs) => cs.filter((c) => c.count > 0)).catch(() => []),
+    listTags().then((ts) => ts.filter((t) => t.count > 0)).catch(() => []),
   ]);
   return [
     { url: base, lastModified: new Date() },
-    // 分类/标签列表页：内容随照片库周级变化，优先级低于照片详情页
+    // 分类/标签列表页：内容随照片库周级变化，优先级低于照片详情页。
+    // slug/name 可能含中文（slugify 保留 \p{L}），必须 percent-encode——Next 的
+    // sitemap 序列化器把 url 原样插进 <loc>，不做 URL 归一化转义
     ...categories.map((c) => ({
-      url: `${base}/category/${c.slug}`,
+      url: `${base}/category/${encodeURIComponent(c.slug)}`,
       changeFrequency: "weekly" as const,
       priority: 0.6,
     })),

@@ -18,15 +18,19 @@ export interface NavTarget {
  */
 export default function PhotoNav({ prev, next }: { prev: NavTarget | null; next: NavTarget | null }) {
   const router = useRouter();
+  const nextHref = next?.href;
 
-  // 预取列表中的下一张，键盘/点击翻页近似即时（prev 通常来自刚离开的列表页，已有缓存）
+  // 显式预取下一张，覆盖纯键盘路径（‹/› 是 Link，进视口才会自动预取）。
+  // 注意：dynamic 路由的 prefetch 只热到 loading 骨架边界，完整页面仍需服务端往返。
   useEffect(() => {
-    if (next) router.prefetch(next.href);
-  }, [router, next]);
+    if (nextHref) router.prefetch(nextHref);
+  }, [router, nextHref]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      // 长按方向键会以 ~30Hz 连发：每跳都触发 force-dynamic 渲染并污染历史栈，直接忽略 repeat
+      if (e.repeat) return;
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if (document.body.dataset.lightbox === "1") return;
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) {

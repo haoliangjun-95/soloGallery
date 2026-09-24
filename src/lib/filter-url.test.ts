@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFilterUrl, photoHref } from "./filter-url";
+import { buildFilterUrl, contextToParams, firstParam, parseYear, photoHref } from "./filter-url";
 
 const FULL_CURRENT = {
   category: "travel",
@@ -109,5 +109,62 @@ describe("photoHref — 详情页上下文透传", () => {
     const parsed = new URLSearchParams(href.slice(href.indexOf("?") + 1));
     expect(parsed.get("tag")).toBe("海边日落");
     expect(parsed.get("q")).toBe("sun set");
+  });
+});
+
+describe("firstParam — searchParams 重复参数归一化", () => {
+  it("字符串原样返回", () => {
+    expect(firstParam("a")).toBe("a");
+    expect(firstParam("")).toBe("");
+  });
+
+  it("数组取首元素（?q=a&q=b 运行时是数组，直调 .trim() 会抛 TypeError）", () => {
+    expect(firstParam(["a", "b"])).toBe("a");
+  });
+
+  it("空数组与 undefined 归一为 undefined", () => {
+    expect(firstParam([])).toBeUndefined();
+    expect(firstParam(undefined)).toBeUndefined();
+  });
+});
+
+describe("parseYear — 年份参数校验（首页/详情页/API 三处同源）", () => {
+  it("合法年份通过", () => {
+    expect(parseYear("2024")).toBe(2024);
+    expect(parseYear("1971")).toBe(1971);
+    expect(parseYear("9998")).toBe(9998);
+  });
+
+  it("拒绝 1970 及更早", () => {
+    expect(parseYear("1970")).toBeUndefined();
+    expect(parseYear("1900")).toBeUndefined();
+  });
+
+  it("拒绝 9999 及以上（yearBounds 构造五位年份得 Invalid Date，进 Prisma 即 500）", () => {
+    expect(parseYear("9999")).toBeUndefined();
+    expect(parseYear("99999")).toBeUndefined();
+  });
+
+  it("拒绝非整数、非数字、空串与 undefined", () => {
+    expect(parseYear("2024.5")).toBeUndefined();
+    expect(parseYear("abc")).toBeUndefined();
+    expect(parseYear("")).toBeUndefined();
+    expect(parseYear(undefined)).toBeUndefined();
+  });
+});
+
+describe("contextToParams — photoHref 与 loadMore 共用的上下文序列化", () => {
+  it("按 category,tag,year,q,fav,month 规范顺序输出", () => {
+    const params = contextToParams({ month: "2024-06", fav: true, q: "x", year: 2024, tag: "t", category: "c" });
+    expect(params.toString()).toBe("category=c&tag=t&year=2024&q=x&fav=1&month=2024-06");
+  });
+
+  it("空上下文得空参数集", () => {
+    expect(contextToParams({}).toString()).toBe("");
+  });
+
+  it("photoHref 即 contextToParams 的链接包装（两者恒一致）", () => {
+    const ctx = { category: "c", year: 2024 } as const;
+    expect(photoHref("abc123", ctx)).toBe(`/photo/abc123?${contextToParams(ctx).toString()}`);
   });
 });

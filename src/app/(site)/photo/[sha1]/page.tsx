@@ -8,10 +8,11 @@ import ExifCard from "@/components/ExifCard";
 import PhotoNav from "@/components/PhotoNav";
 import ZoomableImage from "@/components/ZoomableImage";
 import { isAdmin } from "@/lib/auth";
+import { DISPLAY_WIDTH } from "@/lib/bucket-layout";
 import { siteUrl } from "@/lib/config";
 import { prisma } from "@/lib/db";
 import { formatAperture, formatCamera, formatExposure, formatShotDate } from "@/lib/exif-format";
-import { photoHref, type PhotoContext } from "@/lib/filter-url";
+import { firstParam, parseYear, photoHref, type PhotoContext } from "@/lib/filter-url";
 import { getAdjacentPhotos, getPhotoDetail } from "@/lib/queries";
 import { getSettings } from "@/lib/settings";
 import type { PhotoDetailDTO } from "@/lib/types";
@@ -19,23 +20,28 @@ import type { PhotoDetailDTO } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 interface Props extends PageProps<"/photo/[sha1]"> {
+  /** 重复参数（?q=a&q=b）运行时是数组——类型如实声明，入口经 firstParam 归一 */
   searchParams: Promise<{
-    category?: string;
-    tag?: string;
-    year?: string;
-    q?: string;
-    fav?: string;
-    month?: string;
+    category?: string | string[];
+    tag?: string | string[];
+    year?: string | string[];
+    q?: string | string[];
+    fav?: string | string[];
+    month?: string | string[];
   }>;
 }
 
 const SHA1_KEY_RE = /^[a-f0-9]{6,40}$/;
+/** meta description 长度上限（社交平台摘要惯例值） */
+const META_DESC_MAX = 200;
 
 /** 可见性解析：generateMetadata 与页面主体共用，React cache 保证同一请求只查一次。 */
 const resolvePhoto = cache(async (key: string) => {
   const row = await prisma.photo.findFirst({
     where: { OR: [{ sha1: key }, { sha1: { startsWith: key } }] },
     select: { id: true, published: true, missing: true },
+    // 短前缀碰撞（6 位前缀在万张量级下可能撞车）时取最早入库的一条，跨请求选择确定
+    orderBy: { id: "asc" },
   });
   if (!row) return null;
   const admin = await isAdmin();
@@ -47,7 +53,8 @@ const resolvePhoto = cache(async (key: string) => {
 
 /** meta description：手工描述优先，否则拼 EXIF 摘要（器材 · 参数 · 拍摄时间）。 */
 function metaDescription(photo: PhotoDetailDTO): string | undefined {
-  if (photo.description) return photo.description.slice(0, 200);
+  // Array.from 按码点截断，避免 slice 切断 emoji 代理对产生乱码
+  if (photo.description) return Array.from(photo.description).slice(0, META_DESC_MAX).join("");
   const exif = photo.exif;
   if (!exif) return undefined;
   const parts = [
@@ -59,6 +66,13 @@ function metaDescription(photo: PhotoDetailDTO): string | undefined {
     formatShotDate(exif.shotAt ?? photo.shotAt ?? undefined),
   ].filter((v): v is string => Boolean(v));
   return parts.length ? parts.join(" · ") : undefined;
+}
+
+/** displayUrl 是 DISPLAY_WIDTH 上限的缩小 WebP 变体：OG 尺寸按同比折算，声明原图尺寸会让纵横比失真。 */
+function ogDimensions(width: number | null, height: number | null): { width: number; height: number } | undefined {
+  if (!width || !height || width <= 0 || height <= 0) return undefined;
+  if (width <= DISPLAY_WIDTH) return { width, height };
+  return { width: DISPLAY_WIDTH, height: Math.max(1, Math.round((height * DISPLAY_WIDTH) / width)) };
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -83,8 +97,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       images: [
         {
           url: photo.displayUrl, // MinIO 公共读绝对地址，社交平台可直接抓取
-          width: photo.width ?? undefined,
-          height: photo.height ?? undefined,
+          ...ogDimensions(photo.width, photo.height),
           alt: photo.title,
         },
       ],
@@ -102,17 +115,22 @@ export default async function PhotoPage({ params, searchParams }: Props) {
   if (!resolved) notFound();
   const { row, admin, photo } = resolved;
 
-  // 筛选上下文透传：上一张/下一张沿来源列表的同一顺序（无参数时即全库默认列表序）
+  // 筛选上下文透传：上一张/下一张沿来源列表的同一顺序（无参数时即全库默认列表序）。
+  // 重复参数运行时是数组，统一 firstParam 归一后再做业务校验（与首页同一套解析）
   const sp = await searchParams;
-  const year = Number.isInteger(Number(sp.year)) && Number(sp.year) > 1970 ? Number(sp.year) : undefined;
-  const q = sp.q?.trim().slice(0, 64) || undefined;
-  const month = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month : undefined;
-  const favorite = sp.fav === "1";
-  const navQuery: PhotoContext = { category: sp.category, tag: sp.tag, year, q, fav: favorite, month };
+  const category = firstParam(sp.category);
+  const tag = firstParam(sp.tag);
+  const year = parseYear(firstParam(sp.year));
+  const qRaw = firstParam(sp.q);
+  const q = qRaw?.trim().slice(0, 64) || undefined;
+  const monthRaw = firstParam(sp.month);
+  const month = /^\d{4}-\d{2}$/.test(monthRaw ?? "") ? monthRaw : undefined;
+  const favorite = firstParam(sp.fav) === "1";
+  const navQuery: PhotoContext = { category, tag, year, q, fav: favorite, month };
 
   const [settings, adjacent] = await Promise.all([
     getSettings(),
-    getAdjacentPhotos(photo.sha1, { categorySlug: sp.category, tag: sp.tag, year, q, favorite, month }),
+    getAdjacentPhotos(photo.sha1, { categorySlug: category, tag, year, q, favorite, month }),
   ]);
   const originalView = settings.originalView === "true";
   // HEIC 原图浏览器无法渲染，开启查看原图时也回退 display WebP（下载入口仍给原文件）
