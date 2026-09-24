@@ -3,7 +3,16 @@ import { displayKey, originalKey } from "./bucket-layout";
 import { publicUrl } from "./config";
 import { prisma } from "./db";
 import { getSettings } from "./settings";
-import { DISPLAY_UTC_OFFSET, displayMonthKey, monthBounds, yearBounds } from "./time";
+import { reservoirSample } from "./sample";
+import {
+  DISPLAY_UTC_OFFSET,
+  displayMonthDay,
+  displayMonthKey,
+  monthBounds,
+  monthDayBoundsInYear,
+  yearBounds,
+  type TimeBounds,
+} from "./time";
 import type {
   AdminPhotoDTO,
   CategoryDTO,
@@ -316,6 +325,110 @@ export async function listYears(publishedOnly = true): Promise<{ year: number; c
     ORDER BY year DESC
   `;
   return rows.map((r) => ({ year: Number(r.year), count: Number(r.count) }));
+}
+
+/** "那年今日"轻量照片卡（横滑条专用，无 exif/文件元数据）。 */
+export interface MemoryPhoto {
+  sha1: string;
+  thumbUrl: string;
+  title: string;
+  favorite: boolean;
+}
+
+export interface MemoryGroup {
+  year: number;
+  yearsAgo: number;
+  photos: MemoryPhoto[];
+}
+
+export interface MemoriesResult {
+  /** 展示时区的今天 "MM-DD"（标题展示与分组换算同源） */
+  monthDay: string;
+  groups: MemoryGroup[];
+}
+
+/** 一次最多取的 memories 照片数（与日历视图同量级，select 极轻量） */
+const MEMORIES_MAX_PHOTOS = 60;
+/** 单年上限：防止某一年数量碾压其他年份，横滑条失去"跨年回顾"意义 */
+const MEMORIES_PER_YEAR = 12;
+
+/**
+ * "那年今日"：往年（不含今年）的今天（展示时区 MM-DD）拍摄的照片，按年分组倒序。
+ * 只对库里有照片的年份构造日界 range（复用 listYears），平年 2-29 自动跳过；
+ * shotAt range 可走索引，避免 DATE_FORMAT 全表扫。
+ */
+export async function listMemories(now: Date = new Date()): Promise<MemoriesResult> {
+  const monthDay = displayMonthDay(now);
+  const thisYear = Number(displayMonthKey(now).slice(0, 4));
+  const years = await listYears();
+  const ranges = years
+    .filter((y) => y.year < thisYear)
+    .map((y) => ({ year: y.year, bounds: monthDayBoundsInYear(y.year, monthDay) }))
+    .filter((r): r is { year: number; bounds: TimeBounds } => r.bounds !== null);
+  if (!ranges.length) return { monthDay, groups: [] };
+
+  const rows = await prisma.photo.findMany({
+    where: {
+      published: true,
+      missing: false,
+      OR: ranges.map((r) => ({ shotAt: { gte: r.bounds.gte, lt: r.bounds.lt } })),
+    },
+    orderBy: { shotAt: "desc" },
+    take: MEMORIES_MAX_PHOTOS,
+    select: { sha1: true, thumbKey: true, title: true, favorite: true, shotAt: true },
+  });
+
+  const byYear = new Map<number, MemoryPhoto[]>();
+  for (const r of rows) {
+    if (!r.shotAt) continue;
+    // 展示时区归年，与 range 构造同一套换算，归属不会打架
+    const year = Number(displayMonthKey(r.shotAt).slice(0, 4));
+    const photo: MemoryPhoto = {
+      sha1: r.sha1,
+      thumbUrl: publicUrl(r.thumbKey ?? displayKey(r.sha1)),
+      title: r.title,
+      favorite: r.favorite,
+    };
+    const list = byYear.get(year);
+    if (!list) byYear.set(year, [photo]);
+    else if (list.length < MEMORIES_PER_YEAR) list.push(photo);
+  }
+  return {
+    monthDay,
+    groups: [...byYear.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([year, photos]) => ({ year, yearsAgo: thisYear - year, photos })),
+  };
+}
+
+/** 随机漫游候选 id 上限：只 select id，内存可忽略（与日历视图上限同量级） */
+const RANDOM_CANDIDATE_CAP = 20000;
+/** 单次随机漫游的照片数（上限，防调用方传入过大值） */
+const RANDOM_WALK_COUNT = 10;
+
+/**
+ * 随机漫游：应用层水塘抽样取 count 张已发布照片。
+ * 两段式（轻量 id 候选 → 按 id 回取完整卡片）避免 ORDER BY RAND() 全表排序；
+ * 返回顺序保持抽样顺序。
+ */
+export async function listRandomPhotos(count: number = RANDOM_WALK_COUNT): Promise<PhotoCardDTO[]> {
+  const n = Math.max(1, Math.min(count, RANDOM_WALK_COUNT));
+  const candidates = await prisma.photo.findMany({
+    where: { published: true, missing: false },
+    select: { id: true },
+    take: RANDOM_CANDIDATE_CAP,
+  });
+  const picked = reservoirSample(candidates, n).map((c) => c.id);
+  if (!picked.length) return [];
+  const rows = await prisma.photo.findMany({
+    where: { id: { in: picked } },
+    select: CARD_SELECT,
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return picked.flatMap((id) => {
+    const r = byId.get(id);
+    return r ? [toCard(r)] : [];
+  });
 }
 
 /** 未读评论数（待审/已通过且从未被后台查看过；垃圾拦截的不计）。 */

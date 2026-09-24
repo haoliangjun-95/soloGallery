@@ -3,14 +3,18 @@ import { buildFilterUrl, type FilterPatch } from "@/lib/filter-url";
 import {
   countFavorites,
   listCategories,
+  listMemories,
   listMonths,
   listPhotos,
   listPhotosCalendar,
+  listRandomPhotos,
   listTags,
   listYears,
 } from "@/lib/queries";
 import CalendarView from "@/components/CalendarView";
+import MemoriesStrip from "@/components/MemoriesStrip";
 import PhotoGrid from "@/components/PhotoGrid";
+import RandomWalkLink from "@/components/RandomWalkLink";
 import Sidebar from "@/components/Sidebar";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +28,7 @@ interface Props extends PageProps<"/"> {
     fav?: string;
     view?: string;
     month?: string;
+    random?: string;
   }>;
 }
 
@@ -37,14 +42,20 @@ export default async function HomePage({ searchParams }: Props) {
     ? (sp.view as "normal" | "square" | "fixed" | "masonry" | "list" | "calendar")
     : "fixed";
   const month = /^(\d{4})-(\d{2})$/.test(sp.month ?? "") ? sp.month : undefined;
+  // 随机漫游模式：?random=<nonce>（nonce 仅为绕开路由缓存触发重渲染，值本身无意义）
+  const isRandom = Boolean(sp.random);
+  // 默认首页（无任何筛选/视图/随机参数）才展示"那年今日"
+  const isDefaultHome =
+    !isRandom && !sp.category && !sp.tag && !year && !q && !fav && !month && view !== "calendar";
 
-  const [categories, tags, years, favCount, calendarMonths] = await Promise.all([
+  const [categories, tags, years, favCount, calendarMonths, memories] = await Promise.all([
     listCategories(),
     listTags(),
     listYears(),
     countFavorites(),
     // 日历视图与单月切换都需要月份列表，一次取齐
     view === "calendar" || month ? listMonths() : Promise.resolve([]),
+    isDefaultHome ? listMemories() : Promise.resolve(null),
   ]);
 
   /** 移动端 chips 组合筛选链接（PC 由侧栏承担）：未提及的维度叠加保留；
@@ -68,13 +79,15 @@ export default async function HomePage({ searchParams }: Props) {
 
   // 单月视图数据
   const monthIdx = month ? calendarMonths.findIndex((m) => m.ym === month) : -1;
+  // 随机漫游：水塘抽样一批照片；total=items.length 使 PhotoGrid 初始即 done，天然禁用无限滚动
+  const randomItems = isRandom ? await listRandomPhotos() : null;
   const listing =
-    calendarData === null
+    calendarData === null && !isRandom
       ? await listPhotos({ categorySlug: sp.category, tag: sp.tag, year, q, favorite: fav, month })
       : null;
-  const total = listing ? listing.total : 0;
+  const total = randomItems ? randomItems.length : listing ? listing.total : 0;
   const pageSize = listing ? listing.pageSize : 60;
-  const items = listing ? listing.items : [];
+  const items = randomItems ?? (listing ? listing.items : []);
   const monthPrev = monthIdx > 0 ? calendarMonths[monthIdx - 1] : undefined; // 更近的月
   const monthNext =
     monthIdx >= 0 && monthIdx < calendarMonths.length - 1 ? calendarMonths[monthIdx + 1] : undefined; // 更早的月
@@ -88,7 +101,7 @@ export default async function HomePage({ searchParams }: Props) {
         years={years}
         totalAll={month || view === "calendar" ? calendarMonths.reduce((s, m) => s + m.count, 0) : total}
         totalFav={favCount}
-        sp={{ category: sp.category, tag: sp.tag, year: sp.year, q: sp.q, fav: sp.fav, view: sp.view, month: sp.month }}
+        sp={{ category: sp.category, tag: sp.tag, year: sp.year, q: sp.q, fav: sp.fav, view: sp.view, month: sp.month, random: sp.random }}
       />
 
       <div className="min-w-0">
@@ -101,6 +114,13 @@ export default async function HomePage({ searchParams }: Props) {
           <FilterLink href="/?view=calendar" active={view === "calendar"}>
             日历
           </FilterLink>
+          <RandomWalkLink
+            className={`inline-flex min-h-11 shrink-0 items-center rounded-full border px-3 py-1 transition-colors focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2 ${
+              isRandom ? "border-foreground/60 bg-foreground/10 text-foreground" : "border-edge text-muted hover:text-foreground"
+            }`}
+          >
+            随机漫游
+          </RandomWalkLink>
           {categories.map((c) => (
             <FilterLink key={c.id} href={qs({ category: c.slug })} active={sp.category === c.slug}>
               {c.name}
@@ -114,7 +134,19 @@ export default async function HomePage({ searchParams }: Props) {
           ))}
         </div>
 
-        {month ? (
+        {isRandom ? (
+          <div className="mb-6 flex flex-wrap items-center gap-3">
+            <h1 className="text-xl font-semibold">
+              随机漫游 <span className="text-sm text-muted font-normal">{total} 张</span>
+            </h1>
+            <RandomWalkLink
+              className="rounded-full border border-edge px-3 py-1 text-sm text-muted transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2"
+              title="重新随机一批照片"
+            >
+              换一批
+            </RandomWalkLink>
+          </div>
+        ) : month ? (
           <div className="mb-6 flex flex-wrap items-center gap-3">
             <Link href="/?view=calendar" className="text-sm text-muted hover:text-foreground" title="返回日历视图">
               ← 日历
@@ -159,11 +191,13 @@ export default async function HomePage({ searchParams }: Props) {
           <h1 className="text-xl font-semibold mb-6">日历</h1>
         ) : null}
 
+        {isDefaultHome && memories ? <MemoriesStrip memories={memories} /> : null}
+
         {calendarData ? (
           <CalendarView months={calendarData} />
         ) : (
           <PhotoGrid
-            key={`${sp.category ?? ""}|${sp.tag ?? ""}|${sp.year ?? ""}|${q ?? ""}|${fav ? "fav" : ""}|${view}|${month ?? ""}|${total}`}
+            key={`${sp.category ?? ""}|${sp.tag ?? ""}|${sp.year ?? ""}|${q ?? ""}|${fav ? "fav" : ""}|${view}|${month ?? ""}|${sp.random ?? ""}|${total}`}
             initialItems={items}
             total={total}
             pageSize={pageSize}

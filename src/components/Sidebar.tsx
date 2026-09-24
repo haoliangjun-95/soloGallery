@@ -2,6 +2,7 @@ import Link from "next/link";
 import { buildFilterUrl, type FilterPatch } from "@/lib/filter-url";
 import { getSettings } from "@/lib/settings";
 import type { CategoryDTO, TagDTO } from "@/lib/types";
+import RandomWalkLink from "@/components/RandomWalkLink";
 
 export interface SidebarFilters {
   category?: string;
@@ -11,6 +12,7 @@ export interface SidebarFilters {
   fav?: string;
   view?: string;
   month?: string;
+  random?: string;
 }
 
 interface Props {
@@ -61,6 +63,14 @@ function IconCalendar() {
   );
 }
 
+function IconShuffle() {
+  return (
+    <svg className={ICON} viewBox="0 0 24 24" {...STROKE} aria-hidden>
+      <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+    </svg>
+  );
+}
+
 /**
  * 左侧栏：磨砂深色面板，顶部头像+画廊名，核心入口卡片，
  * 下方 分类/年份/标签 分组。选中态 = 柔和高亮 + 浅金左侧指示条。
@@ -71,7 +81,8 @@ export default async function Sidebar({ categories, tags, years, totalAll, total
 
   const favActive = sp.fav === "1";
   const calActive = sp.view === "calendar";
-  const noneActive = !sp.category && !sp.tag && !sp.year && !favActive && !calActive && !sp.month;
+  const randomActive = Boolean(sp.random);
+  const noneActive = !sp.category && !sp.tag && !sp.year && !favActive && !calActive && !sp.month && !randomActive;
 
   /** 覆盖一组互斥维度，保留搜索词。view/month 仅在显式指定时保留，其余入口会退出日历/单月视图。 */
   const href = (patch: FilterPatch) =>
@@ -101,6 +112,21 @@ export default async function Sidebar({ categories, tags, years, totalAll, total
           <Item href={href({})} active={noneActive} label="全部照片" count={totalAll} icon={<IconGrid />} />
           <Item href={href({ fav: "1" })} active={favActive} label="收藏" count={totalFav} icon={<IconStar />} />
           <Item href={href({ view: "calendar" })} active={calActive} label="日历" count={totalAll} icon={<IconCalendar />} />
+          {/* 随机漫游是客户端按钮（每次点击生成新 nonce），非 Link——外观对齐 Item */}
+          <RandomWalkLink
+            title="随机挑选 10 张照片"
+            className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2 ${
+              randomActive ? "bg-white/[0.07] text-white" : "text-[#c9c9c9] hover:bg-white/[0.045] hover:text-white"
+            }`}
+          >
+            {randomActive ? (
+              <span className="absolute left-0 top-1/2 h-[18px] w-[3px] -translate-y-1/2 rounded-full bg-[#f5b43c]" aria-hidden />
+            ) : null}
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center transition-transform duration-200 group-hover:scale-110">
+              <IconShuffle />
+            </span>
+            <span className={`truncate text-sm ${randomActive ? "font-medium" : "font-normal"}`}>随机漫游</span>
+          </RandomWalkLink>
         </div>
 
         {categories.length > 0 ? (
