@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { patchById } from "@/lib/optimistic";
-import { isOversized, MAX_FILE_BYTES, summarizeQueue } from "@/lib/upload-queue";
+import { isOversized, MAX_FILE_BYTES, summarizeQueue, toQueueOutcome } from "@/lib/upload-queue";
 import type { QueueStatus } from "@/lib/upload-queue";
 
 /**
@@ -25,6 +25,10 @@ interface QueueItem {
   status: QueueStatus;
   progress: number;
   message?: string;
+  /** 超限项入队即标记（构造后不变）：确定性失败、重试必然回到同一 error——
+   *  隐藏重试按钮并让「清除已完成」连带清除（评审收编 M-1：否则成永久死项，
+   *  无任何移除入口、汇总条失败数被永久抬高） */
+  oversized?: boolean;
 }
 
 const MAX_FILE_MB = MAX_FILE_BYTES / 1024 / 1024;
@@ -50,17 +54,23 @@ export default function UploadClient() {
       // 超限文件入队即标记 error（不进 pending）：用户立刻看到原因，
       // 不浪费带宽传完 30MB 才吃服务端拒绝
       return isOversized(file)
-        ? { id, file, status: "error", progress: 0, message: OVERSIZED_MESSAGE }
+        ? { id, file, status: "error", progress: 0, message: OVERSIZED_MESSAGE, oversized: true }
         : { id, file, status: "pending", progress: 0 };
     });
     setQueue((prev) => [...prev, ...added]);
   }
 
-  function updateItem(id: number, patch: Partial<QueueItem>) {
-    setQueue((prev) => patchById(prev, id, patch));
+  // 评审收编 L-2：patch 收窄到可写字段白名单（同功能 9 乐观 patch 口径）——
+  // Partial<QueueItem> 允许误传 id/file 破坏寻址根基且无报错；id/file/oversized
+  // 构造后不变。显式类型实参防泛型从 Partial<Pick<…>> 反推退化（a7bd8e2 同款）
+  function updateItem(
+    id: number,
+    patch: Partial<Pick<QueueItem, "status" | "progress" | "message">>,
+  ) {
+    setQueue((prev) => patchById<QueueItem>(prev, id, patch));
   }
 
-  /** 单文件 XHR 上传：onprogress 字节级进度 → onload 解析 outcomes[0] → 终态 */
+  /** 单文件 XHR 上传：onprogress 字节级进度 → onload 经 toQueueOutcome 判决终态 */
   function uploadOne(item: QueueItem): Promise<void> {
     updateItem(item.id, { status: "uploading", progress: 0 });
     return new Promise<void>((resolve) => {
@@ -81,28 +91,28 @@ export default function UploadClient() {
         }
       };
       xhr.onload = () => {
+        // 评审收编 H-1/M-2：终态判决下沉 upload-queue.ts 纯函数 toQueueOutcome
+        // 直测——服务端把逐文件错误（sniff UNKNOWN/putBuffer 抛错等）装进
+        // HTTP 200 的 outcomes 返回，旧映射只区分 exists、其余 2xx 一律标
+        // 「完成」，SVG/基础设施抖动全成静默假成功且错误文案被清成 undefined
+        let data: unknown = null;
         try {
-          const data = JSON.parse(xhr.responseText);
-          const outcome = data.outcomes?.[0];
-          if (xhr.status >= 200 && xhr.status < 300) {
-            updateItem(item.id, {
-              status: outcome?.status === "exists" ? "exists" : "done",
-              progress: 100,
-              message: outcome?.status === "exists" ? "已存在（sha1 相同），跳过" : undefined,
-            });
-          } else {
-            updateItem(item.id, {
-              status: "error",
-              message: outcome?.error ?? data.error ?? `HTTP ${xhr.status}`,
-            });
-          }
+          data = JSON.parse(xhr.responseText);
         } catch {
-          updateItem(item.id, { status: "error", message: `HTTP ${xhr.status}` });
+          // 解析失败保持 null → toQueueOutcome 归为 HTTP 状态码错误
         }
+        updateItem(item.id, toQueueOutcome(xhr.status, data));
         resolve();
       };
       xhr.onerror = () => {
         updateItem(item.id, { status: "error", message: "网络错误" });
+        resolve();
+      };
+      // 评审收编 L-1：缺 onabort settle 路径时，浏览器触发 abort（未整页卸载）
+      // Promise 永不 settle → startUpload/retryOne 的 await 悬挂 → finally 不执行
+      // → running 恒 true 三按钮永久禁用，只能刷新页面
+      xhr.onabort = () => {
+        updateItem(item.id, { status: "error", message: "已中止" });
         resolve();
       };
       xhr.send(form);
@@ -186,10 +196,15 @@ export default function UploadClient() {
             </button>
             <button
               type="button"
-              // 保留 pending 与 error：原实现只留 pending，「清除已完成」会把
-              // 失败项一并静默清掉、连带销毁唯一的重试入口
+              // 保留 pending 与可重试的 error：原实现只留 pending，「清除已完成」
+              // 会把失败项一并静默清掉、连带销毁唯一的重试入口；超限死项
+              // （oversized，重试必然同错）连带清除——评审收编 M-1 的移除入口
               onClick={() =>
-                setQueue((prev) => prev.filter((q) => q.status === "pending" || q.status === "error"))
+                setQueue((prev) =>
+                  prev.filter(
+                    (q) => q.status === "pending" || (q.status === "error" && !q.oversized),
+                  ),
+                )
               }
               disabled={running}
               className="rounded-lg border border-edge px-4 py-2 text-sm text-muted hover:text-foreground disabled:opacity-40"
@@ -216,11 +231,18 @@ export default function UploadClient() {
                   {item.file.name}
                 </span>
                 <div className="flex-1 h-1.5 rounded bg-foreground/10 overflow-hidden">
+                  {/* 评审收编 L-4：动画落 transform scaleX 而非 width——compositor
+                      友好，逐 progress 事件不再触发 layout；L-3：补 progressbar 语义 */}
                   <div
-                    className={`h-full transition-all ${
+                    role="progressbar"
+                    aria-valuenow={item.progress}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`${item.file.name} 上传进度`}
+                    className={`h-full w-full origin-left transition-transform ${
                       item.status === "error" ? "bg-red-500" : item.status === "exists" ? "bg-amber-500" : "bg-emerald-500"
                     }`}
-                    style={{ width: `${item.progress}%` }}
+                    style={{ transform: `scaleX(${item.progress / 100})` }}
                   />
                 </div>
                 <span
@@ -239,11 +261,15 @@ export default function UploadClient() {
                           ? "已存在"
                           : "失败"}
                 </span>
-                {item.status === "error" ? (
+                {/* 评审收编 M-1：超限项隐藏重试（确定性失败的可重试 affordance
+                    是误导，点击只会 uploading→error 原地空转）；L-3：补 per-file
+                    可访问名，读屏器 N 行中不再只听到裸「重试」 */}
+                {item.status === "error" && !item.oversized ? (
                   <button
                     type="button"
                     onClick={() => void retryOne(item)}
                     disabled={running}
+                    aria-label={`重试 ${item.file.name}`}
                     className="shrink-0 rounded-lg border border-edge px-2 py-1 text-xs text-muted hover:text-foreground disabled:opacity-40"
                   >
                     重试
