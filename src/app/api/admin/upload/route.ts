@@ -10,13 +10,15 @@ import { generateDisplay } from "@/lib/image-pipeline";
 import { createLogger } from "@/lib/logger";
 import { putBuffer } from "@/lib/s3";
 import { sniffImage } from "@/lib/sniff";
+// 单文件上限与客户端预检共用同一出处（功能 12）：客户端入队即拦超限，
+// 此处服务端兜底不变（绕过前端直连 API 依然被拒）
+import { MAX_FILE_BYTES } from "@/lib/upload-queue";
 
 export const runtime = "nodejs";
 
 const logger = createLogger("upload");
 
-/** 单文件与单次请求上限：整图会读进 Buffer，无上限时一次大批量上传能打满内存 */
-const MAX_FILE_BYTES = 30 * 1024 * 1024;
+/** 单次请求上限：整图会读进 Buffer，无上限时一次大批量上传能打满内存 */
 const MAX_FILES_PER_REQUEST = 20;
 
 interface UploadOutcome {
