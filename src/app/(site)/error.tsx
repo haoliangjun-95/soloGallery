@@ -44,7 +44,7 @@ export default function Error({
           发生了意外错误，可以重试一次，或回到首页继续浏览。
         </p>
         {error.digest ? (
-          <p className="mt-3 font-mono text-xs text-white/30">错误码：{error.digest}</p>
+          <p className="mt-3 font-mono text-xs text-white/50">错误码：{error.digest}</p>
         ) : null}
         <div className="mt-6 flex items-center justify-center gap-3">
           <button
