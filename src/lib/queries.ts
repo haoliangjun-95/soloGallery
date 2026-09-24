@@ -4,7 +4,10 @@ import { displayKey, originalKey } from "./bucket-layout";
 import { publicUrl } from "./config";
 import { prisma } from "./db";
 import { getSettings } from "./settings";
+import { isAdmin } from "./auth";
+import { hideGps } from "./geo";
 import { reservoirSample } from "./sample";
+import type { NormalizedExif } from "./exif";
 import {
   DISPLAY_UTC_OFFSET,
   displayMonthDay,
@@ -99,6 +102,25 @@ const CARD_SELECT = {
 } as const;
 
 /**
+ * GPS 可见性判定（功能 18）：React cache 请求级去重——同一请求内多个公开
+ * 生产点（listPhotos/listRandomPhotos/getPhotoDetail）只读一次设置 + 会话。
+ * exposeGps 关闭时站长仍可见；管理端 DTO 走 listPhotosAdmin 等独立函数，不经此闸门。
+ */
+const canSeeGps = cache(async (): Promise<boolean> => {
+  const { exposeGps } = await getSettings();
+  return exposeGps === "true" || isAdmin();
+});
+
+/**
+ * 公开 DTO 裁剪：expose=true 或无 gps 时原引用返回（零拷贝）；
+ * 否则浅拷贝剔除 gps（hideGps 保证不可变）。收敛所有公开 exif 出口。
+ */
+function applyGpsPolicy<P extends { exif: NormalizedExif | null }>(photo: P, expose: boolean): P {
+  if (expose || !photo.exif?.gps) return photo;
+  return { ...photo, exif: hideGps(photo.exif) };
+}
+
+/**
  * listPhotos 与 getAdjacentPhotos 共用的可见性 + 筛选 where 构造——
  * 详情页"上一张/下一张"必须与列表用同一套筛选语义，否则相邻关系会错位。
  */
@@ -134,7 +156,8 @@ export async function listPhotos(options: ListOptions = {}): Promise<{ items: Ph
     }),
     prisma.photo.count({ where }),
   ]);
-  return { items: rows.map(toCard), total, page, pageSize };
+  const exposeGps = await canSeeGps();
+  return { items: rows.map((r) => applyGpsPolicy(toCard(r), exposeGps)), total, page, pageSize };
 }
 
 /** 管理端列表（含筛选与状态标记）。status: published/unpublished/missing。 */
@@ -214,7 +237,7 @@ export const getPhotoDetail = cache(async (sha1OrPrefix: string): Promise<PhotoD
     adminReplyAt: c.adminReplyAt ? c.adminReplyAt.toISOString() : null,
     createdAt: c.createdAt.toISOString(),
   }));
-  return {
+  const detail: PhotoDetailDTO = {
     id: photo.id,
     sha1: photo.sha1,
     title: photo.title,
@@ -233,6 +256,7 @@ export const getPhotoDetail = cache(async (sha1OrPrefix: string): Promise<PhotoD
     comments,
     originalUrl: `/api/photos/${photo.sha1}/original`,
   };
+  return applyGpsPolicy(detail, await canSeeGps());
 });
 
 export interface AdjacentPhoto {
@@ -546,9 +570,10 @@ export async function listRandomPhotos(count: number = RANDOM_WALK_COUNT): Promi
     select: CARD_SELECT,
   });
   const byId = new Map(rows.map((r) => [r.id, r]));
+  const exposeGps = await canSeeGps();
   return picked.flatMap((id) => {
     const r = byId.get(id);
-    return r ? [toCard(r)] : [];
+    return r ? [applyGpsPolicy(toCard(r), exposeGps)] : [];
   });
 }
 

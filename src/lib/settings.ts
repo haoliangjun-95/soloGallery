@@ -9,6 +9,8 @@ export const SETTING_DEFAULTS = {
   syncIntervalMinutes: "15",
   syncAutoPublish: "false",
   originalView: "false",
+  /** 公开页面/API 是否暴露 EXIF GPS。默认公开（现状）；置 "false" 后管理端仍可见 */
+  exposeGps: "true",
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

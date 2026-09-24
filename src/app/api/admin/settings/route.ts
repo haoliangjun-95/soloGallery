@@ -18,7 +18,7 @@ export async function PUT(request: NextRequest) {
 
   const patch: Partial<Record<SettingKey, string>> = {};
   const strings: SettingKey[] = ["siteTitle", "siteLogo", "pageSize", "syncIntervalMinutes"];
-  const booleans: SettingKey[] = ["commentsModerated", "syncAutoPublish", "originalView"];
+  const booleans: SettingKey[] = ["commentsModerated", "syncAutoPublish", "originalView", "exposeGps"];
   for (const key of strings) {
     if (typeof body[key] === "string") patch[key] = (body[key] as string).slice(0, 512);
   }

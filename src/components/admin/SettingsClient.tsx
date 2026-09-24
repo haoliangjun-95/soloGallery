@@ -12,6 +12,7 @@ interface SettingsShape {
   syncIntervalMinutes: string;
   syncAutoPublish: string;
   originalView: string;
+  exposeGps: string;
 }
 
 export default function SettingsClient({ initial }: { initial: SettingsShape }) {
@@ -23,6 +24,7 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
     syncIntervalMinutes: initial.syncIntervalMinutes,
     syncAutoPublish: initial.syncAutoPublish === "true",
     originalView: initial.originalView === "true",
+    exposeGps: initial.exposeGps === "true",
   });
   const [logo, setLogo] = useState(initial.siteLogo);
   const [logoBusy, setLogoBusy] = useState(false);
@@ -238,6 +240,20 @@ export default function SettingsClient({ initial }: { initial: SettingsShape }) 
           允许查看原图
           <span className="block text-xs text-muted">
             开启后前台点击放大与「查看原图」下载均使用桶内无压缩原图；关闭则访客仅见压缩展示图（管理员仍可下载）
+          </span>
+        </span>
+      </label>
+
+      <label className="flex items-center gap-3 text-sm">
+        <input
+          type="checkbox"
+          checked={form.exposeGps}
+          onChange={(e) => setForm({ ...form, exposeGps: e.target.checked })}
+        />
+        <span>
+          公开照片 GPS 位置
+          <span className="block text-xs text-muted">
+            关闭后前台页面与公开 API 不再展示 EXIF 中的 GPS 坐标与地名（管理端仍可见）。注意：若同时开启「允许查看原图」，原图文件字节自带 EXIF，仍可被读取到位置信息
           </span>
         </span>
       </label>

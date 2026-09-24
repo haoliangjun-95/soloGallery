@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatGps, gpsLabel } from "./geo";
+import { formatGps, gpsLabel, hideGps } from "./geo";
 
 describe("formatGps", () => {
   it("北纬东经按 度°分′ 方向 输出", () => {
@@ -26,5 +26,36 @@ describe("gpsLabel", () => {
 
   it("无地名字段时回退坐标", () => {
     expect(gpsLabel({ lat: 24 + 28 / 60, lon: 114 + 32 / 60 })).toBe("24°28′N 114°32′E");
+  });
+});
+
+describe("hideGps", () => {
+  const exif = {
+    make: "Canon",
+    model: "EOS R5",
+    focalLength: 35,
+    gps: { lat: 24.48, lon: 114.53, location: "广东省 深圳市" },
+  };
+
+  it("裁剪 gps 返回新对象，其余字段保留，原对象不被污染（不可变）", () => {
+    const hidden = hideGps(exif);
+    expect(hidden).not.toBe(exif);
+    expect(hidden?.gps).toBeUndefined();
+    expect(hidden).toMatchObject({ make: "Canon", model: "EOS R5", focalLength: 35 });
+    expect(exif.gps.location).toBe("广东省 深圳市");
+  });
+
+  it("无 gps 时原引用返回（不做无谓拷贝），null 透传", () => {
+    const plain = { make: "Canon" };
+    expect(hideGps(plain)).toBe(plain);
+    expect(hideGps(null)).toBeNull();
+  });
+
+  it("裁剪结果 JSON 序列化不含 gps 键（公开 API 响应面）", () => {
+    expect(JSON.parse(JSON.stringify(hideGps(exif)))).toEqual({
+      make: "Canon",
+      model: "EOS R5",
+      focalLength: 35,
+    });
   });
 });

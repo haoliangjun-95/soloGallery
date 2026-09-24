@@ -1,4 +1,4 @@
-import type { GeoPoint } from "./exif";
+import type { GeoPoint, NormalizedExif } from "./exif";
 import { createLogger } from "./logger";
 
 const logger = createLogger("geo");
@@ -23,6 +23,16 @@ export function formatGps(gps: GeoPoint): string {
 /** 展示用：优先地名，无则坐标。 */
 export function gpsLabel(gps: GeoPoint): string {
   return gps.location?.trim() || formatGps(gps);
+}
+
+/**
+ * 隐私裁剪（exposeGps 关闭时公开 DTO 用）：返回剔除 gps 的 exif 副本；
+ * 无 gps 原引用返回，避免整批列表的无谓拷贝。管理端路径不经此函数。
+ * gps: undefined 在 JSON 序列化时整个键被丢弃——API 响应面同样不含坐标。
+ */
+export function hideGps(exif: NormalizedExif | null): NormalizedExif | null {
+  if (!exif?.gps) return exif;
+  return { ...exif, gps: undefined };
 }
 
 /**
