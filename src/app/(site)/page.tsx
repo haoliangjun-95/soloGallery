@@ -230,6 +230,13 @@ export default async function HomePage({ searchParams }: Props) {
         ) : year ? (
           <h1 className="text-xl font-semibold mb-6">
             {year} 年 <span className="text-sm text-muted font-normal">{total} 张</span>
+            {/* 年度归档入口（功能 16）：年份筛选激活时的上下文链接，比日历更轻的回顾页 */}
+            <Link
+              href={`/archive/${year}`}
+              className="ml-2 text-sm font-normal text-[#f5b43c] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2"
+            >
+              年度归档 →
+            </Link>
           </h1>
         ) : category ? (
           <h1 className="text-xl font-semibold mb-6">

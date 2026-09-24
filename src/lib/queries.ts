@@ -5,6 +5,7 @@ import { publicUrl } from "./config";
 import { prisma } from "./db";
 import { getSettings } from "./settings";
 import { isAdmin } from "./auth";
+import { buildArchiveYear, type ArchiveMonth } from "./archive";
 import { buildGearCameras, buildGearLenses, gearWhere, parseGearParam, type GearLists } from "./gear";
 import { hideGps } from "./geo";
 import { reservoirSample } from "./sample";
@@ -480,6 +481,32 @@ export const listYears = cache(async (publishedOnly = true): Promise<{ year: num
   `;
   return rows.map((r) => ({ year: Number(r.year), count: Number(r.count) }));
 });
+
+/**
+ * 年度归档（功能 16）：某年已发布照片的轻量行 → 按展示时区月份分节、每月收藏优先精选。
+ * 与 listPhotosCalendar 同款轻量 select；年份边界走 yearBounds（展示时区 UTC 瞬间，
+ * 与 listYears 的 CONVERT_TZ 分组同一时间语义）。分组/排序/截断收敛在 archive.ts 纯函数层。
+ */
+export async function listArchiveYear(year: number): Promise<ArchiveMonth[]> {
+  const { gte, lt } = yearBounds(year);
+  const rows = await prisma.photo.findMany({
+    where: { published: true, missing: false, shotAt: { gte, lt } },
+    orderBy: [{ shotAt: "desc" }, { createdAt: "desc" }],
+    select: { sha1: true, thumbKey: true, title: true, favorite: true, shotAt: true },
+  });
+  return buildArchiveYear(
+    rows.map((r) => ({
+      sha1: r.sha1,
+      title: r.title,
+      thumbUrl: publicUrl(r.thumbKey ?? displayKey(r.sha1)),
+      favorite: r.favorite,
+      // shotAt 由 where 边界保证非空；空串兜底仅为 TS 收窄，真出现也会被
+      // buildArchiveYear 的 `${year}-` 前缀过滤排除（纯函数层纵深防御）
+      monthKey: r.shotAt ? displayMonthKey(r.shotAt) : "",
+    })),
+    year,
+  );
+}
 
 /**
  * 器材聚合（功能 3）：相机（make+model 组合）与镜头（lensModel）去重列表 + 计数，
