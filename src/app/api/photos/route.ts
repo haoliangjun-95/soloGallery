@@ -16,6 +16,10 @@ export async function GET(request: NextRequest) {
     q: sp.get("q") ?? undefined,
     favorite: sp.get("fav") === "1",
     month: sp.get("month") ?? undefined,
+    // 器材筛选（功能 3）：与 q 同款原样透传，buildListWhere 内 parseGearParam 兜底清洗
+    make: sp.get("make") ?? undefined,
+    model: sp.get("model") ?? undefined,
+    lens: sp.get("lens") ?? undefined,
   });
   return json(result);
 }

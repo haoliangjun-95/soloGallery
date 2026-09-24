@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { buildFilterUrl, firstParam, parseYear, type FilterPatch } from "@/lib/filter-url";
+import { formatCamera } from "@/lib/exif-format";
+import { parseGearParam } from "@/lib/gear";
 import {
   countFavorites,
   listCategories,
+  listGear,
   listMemories,
   listMonths,
   listPhotos,
@@ -30,6 +33,9 @@ interface Props extends PageProps<"/"> {
     view?: string | string[];
     month?: string | string[];
     random?: string | string[];
+    make?: string | string[];
+    model?: string | string[];
+    lens?: string | string[];
   }>;
 }
 
@@ -52,17 +58,24 @@ export default async function HomePage({ searchParams }: Props) {
     ? (viewParam as "normal" | "square" | "fixed" | "masonry" | "list" | "calendar")
     : "fixed";
   const month = /^(\d{4})-(\d{2})$/.test(monthParam ?? "") ? monthParam : undefined;
+  // 器材筛选（功能 3）：make+model 定位相机、lens 定位镜头；与 q 同款 trim+截断防御
+  const make = parseGearParam(firstParam(sp.make));
+  const model = parseGearParam(firstParam(sp.model));
+  const lens = parseGearParam(firstParam(sp.lens));
+  // 标题展示名：相机（formatCamera 去重 make 前缀）与镜头同时命中时以「 · 」连接
+  const gearLabel = [formatCamera(make, model), lens].filter(Boolean).join(" · ") || undefined;
   // 随机漫游模式：?random=<nonce>（nonce 仅为绕开路由缓存触发重渲染，值本身无意义）
   const isRandom = Boolean(randomParam);
   // 默认首页（无筛选/随机参数且非日历视图）才展示"那年今日"；
   // 其余 view 值（square/masonry…）只影响布局，不排除 memories
   const isDefaultHome =
-    !isRandom && !category && !tag && !year && !q && !fav && !month && view !== "calendar";
+    !isRandom && !category && !tag && !year && !q && !fav && !month && !make && !model && !lens && view !== "calendar";
 
-  const [categories, tags, years, favCount, calendarMonths, memories, randomItems] = await Promise.all([
+  const [categories, tags, years, gear, favCount, calendarMonths, memories, randomItems] = await Promise.all([
     listCategories(),
     listTags(),
     listYears(),
+    listGear(),
     countFavorites(),
     // 日历视图与单月切换都需要月份列表，一次取齐
     view === "calendar" || month ? listMonths() : Promise.resolve([]),
@@ -81,6 +94,9 @@ export default async function HomePage({ searchParams }: Props) {
         year: yearParam,
         q: qRaw,
         fav: fav ? "1" : undefined,
+        make,
+        model,
+        lens,
         view: viewParam,
       },
       patch,
@@ -94,7 +110,7 @@ export default async function HomePage({ searchParams }: Props) {
   const monthIdx = month ? calendarMonths.findIndex((m) => m.ym === month) : -1;
   const listing =
     calendarData === null && !isRandom
-      ? await listPhotos({ categorySlug: category, tag, year, q, favorite: fav, month })
+      ? await listPhotos({ categorySlug: category, tag, year, q, favorite: fav, month, make, model, lens })
       : null;
   const total = randomItems ? randomItems.length : listing ? listing.total : 0;
   const pageSize = listing ? listing.pageSize : 60;
@@ -110,6 +126,7 @@ export default async function HomePage({ searchParams }: Props) {
         categories={categories}
         tags={tags}
         years={years}
+        gear={gear}
         totalAll={
           month || view === "calendar"
             ? calendarMonths.reduce((s, m) => s + m.count, 0)
@@ -119,13 +136,16 @@ export default async function HomePage({ searchParams }: Props) {
               : total
         }
         totalFav={favCount}
-        sp={{ category, tag, year: yearParam, q: qRaw, fav: favParam, view: viewParam, month: monthParam, random: randomParam }}
+        sp={{ category, tag, year: yearParam, q: qRaw, fav: favParam, view: viewParam, month: monthParam, random: randomParam, make, model, lens }}
       />
 
       <div className="min-w-0">
         {/* 移动端筛选栏（PC 走左侧栏） */}
         <div className="-mx-1 mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto p-1 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
-          <FilterLink href={qs({ category: null, tag: null, year: null, q: null, fav: null })} active={!category && !tag && !yearParam && !fav && !month}>
+          <FilterLink
+            href={qs({ category: null, tag: null, year: null, q: null, fav: null, make: null, model: null, lens: null })}
+            active={!category && !tag && !yearParam && !fav && !month && !make && !model && !lens}
+          >
             全部
           </FilterLink>
           {fav ? null : <FilterLink href={qs({ fav: "1" })} active={fav}>★ 收藏</FilterLink>}
@@ -219,6 +239,10 @@ export default async function HomePage({ searchParams }: Props) {
           <h1 className="text-xl font-semibold mb-6">
             #{tag} <span className="text-sm text-muted font-normal">{total} 张</span>
           </h1>
+        ) : gearLabel ? (
+          <h1 className="text-xl font-semibold mb-6">
+            {gearLabel} <span className="text-sm text-muted font-normal">{total} 张</span>
+          </h1>
         ) : view === "calendar" ? (
           <h1 className="text-xl font-semibold mb-6">日历</h1>
         ) : null}
@@ -229,12 +253,12 @@ export default async function HomePage({ searchParams }: Props) {
           <CalendarView months={calendarData} />
         ) : (
           <PhotoGrid
-            key={`${category ?? ""}|${tag ?? ""}|${yearParam ?? ""}|${q ?? ""}|${fav ? "fav" : ""}|${view}|${month ?? ""}|${randomParam ?? ""}|${total}`}
+            key={`${category ?? ""}|${tag ?? ""}|${yearParam ?? ""}|${q ?? ""}|${fav ? "fav" : ""}|${make ?? ""}|${model ?? ""}|${lens ?? ""}|${view}|${month ?? ""}|${randomParam ?? ""}|${total}`}
             initialItems={items}
             total={total}
             pageSize={pageSize}
             view={view === "calendar" ? "normal" : view}
-            query={{ category, tag, year, q, fav, month }}
+            query={{ category, tag, year, q, fav, make, model, lens, month }}
           />
         )}
       </div>

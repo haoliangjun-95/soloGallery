@@ -5,6 +5,7 @@ import { publicUrl } from "./config";
 import { prisma } from "./db";
 import { getSettings } from "./settings";
 import { isAdmin } from "./auth";
+import { buildGearCameras, buildGearLenses, gearWhere, parseGearParam, type GearLists } from "./gear";
 import { hideGps } from "./geo";
 import { reservoirSample } from "./sample";
 import type { NormalizedExif } from "./exif";
@@ -39,6 +40,10 @@ export interface ListOptions {
   favorite?: boolean;
   /** 月份筛选 YYYY-MM */
   month?: string;
+  /** 器材筛选（功能 3）：EXIF make/model（相机双维度）与 lensModel */
+  make?: string;
+  model?: string;
+  lens?: string;
   publishedOnly?: boolean;
   includeMissing?: boolean;
 }
@@ -138,6 +143,13 @@ function buildListWhere(options: ListOptions) {
     ...(month ? { shotAt: { gte: month.gte, lt: month.lt } } : {}),
     ...(q ? { OR: [{ title: { contains: q } }, { fileName: { contains: q } }] } : {}),
     ...(options.favorite ? { favorite: true } : {}),
+    // 器材筛选（功能 3）：exif Json path 等值 AND 片段，无器材参数时为空对象零影响。
+    // 与 q 同款纵深防御：入口已 parseGearParam，此处再清洗一次，任何调用方都不会把垃圾串带进查询
+    ...gearWhere({
+      make: parseGearParam(options.make),
+      model: parseGearParam(options.model),
+      lens: parseGearParam(options.lens),
+    }),
   };
 }
 
@@ -467,6 +479,37 @@ export const listYears = cache(async (publishedOnly = true): Promise<{ year: num
     ORDER BY year DESC
   `;
   return rows.map((r) => ({ year: Number(r.year), count: Number(r.count) }));
+});
+
+/**
+ * 器材聚合（功能 3）：相机（make+model 组合）与镜头（lensModel）去重列表 + 计数，
+ * 侧栏"器材"分组数据源。请求级缓存：page.tsx 一次取齐后传 Sidebar（同 listYears 模式）。
+ * JSON_EXTRACT 全表扫描——exif 无 JSON path 索引，个人库量级可接受（技术债清单有记录）。
+ */
+export const listGear = cache(async (publishedOnly = true): Promise<GearLists> => {
+  const { Prisma } = await import("@/generated/prisma/client");
+  const cond = publishedOnly ? Prisma.sql`AND published = 1 AND missing = 0` : Prisma.empty;
+  // GROUP BY 用 SELECT 别名（MariaDB 支持，与 listMonths 的 GROUP BY ym 同款）；
+  // 键不存在 → SQL NULL、JSON null → 字符串 "null"，统一交 buildGear* 清洗
+  const [cameraRows, lensRows] = await Promise.all([
+    prisma.$queryRaw<Array<{ make: string | null; model: string | null; count: bigint }>>`
+      SELECT JSON_UNQUOTE(JSON_EXTRACT(exif, '$.make')) AS make,
+             JSON_UNQUOTE(JSON_EXTRACT(exif, '$.model')) AS model,
+             COUNT(*) AS count
+      FROM Photo
+      WHERE exif IS NOT NULL ${cond}
+      GROUP BY make, model
+      ORDER BY count DESC
+    `,
+    prisma.$queryRaw<Array<{ lens: string | null; count: bigint }>>`
+      SELECT JSON_UNQUOTE(JSON_EXTRACT(exif, '$.lensModel')) AS lens, COUNT(*) AS count
+      FROM Photo
+      WHERE exif IS NOT NULL ${cond}
+      GROUP BY lens
+      ORDER BY count DESC
+    `,
+  ]);
+  return { cameras: buildGearCameras(cameraRows), lenses: buildGearLenses(lensRows) };
 });
 
 /** "那年今日"轻量照片卡（横滑条专用，无 exif/文件元数据）。 */

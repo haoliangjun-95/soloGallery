@@ -13,6 +13,7 @@ import { siteUrl } from "@/lib/config";
 import { prisma } from "@/lib/db";
 import { formatAperture, formatCamera, formatExposure, formatShotDate } from "@/lib/exif-format";
 import { firstParam, parseYear, photoHref, type PhotoContext } from "@/lib/filter-url";
+import { parseGearParam } from "@/lib/gear";
 import { getAdjacentPhotos, getPhotoDetail } from "@/lib/queries";
 import { getSettings } from "@/lib/settings";
 import type { PhotoDetailDTO } from "@/lib/types";
@@ -28,6 +29,9 @@ interface Props extends PageProps<"/photo/[sha1]"> {
     q?: string | string[];
     fav?: string | string[];
     month?: string | string[];
+    make?: string | string[];
+    model?: string | string[];
+    lens?: string | string[];
   }>;
 }
 
@@ -126,11 +130,15 @@ export default async function PhotoPage({ params, searchParams }: Props) {
   const monthRaw = firstParam(sp.month);
   const month = /^\d{4}-\d{2}$/.test(monthRaw ?? "") ? monthRaw : undefined;
   const favorite = firstParam(sp.fav) === "1";
-  const navQuery: PhotoContext = { category, tag, year, q, fav: favorite, month };
+  // 器材筛选透传（功能 3）：相邻导航沿器材过滤后的同一列表序
+  const make = parseGearParam(firstParam(sp.make));
+  const model = parseGearParam(firstParam(sp.model));
+  const lens = parseGearParam(firstParam(sp.lens));
+  const navQuery: PhotoContext = { category, tag, year, q, fav: favorite, make, model, lens, month };
 
   const [settings, adjacent] = await Promise.all([
     getSettings(),
-    getAdjacentPhotos(photo.sha1, { categorySlug: category, tag, year, q, favorite, month }),
+    getAdjacentPhotos(photo.sha1, { categorySlug: category, tag, year, q, favorite, month, make, model, lens }),
   ]);
   const originalView = settings.originalView === "true";
   // HEIC 原图浏览器无法渲染，开启查看原图时也回退 display WebP（下载入口仍给原文件）

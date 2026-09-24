@@ -3,7 +3,7 @@
  * 两套语义的唯一出处，替代此前 page.tsx 与 Sidebar.tsx 各自内联的重复实现。
  *
  * 固定规则（与历史行为逐条对齐）：
- * - 参数按 category,tag,year,q,fav,view 的规范顺序序列化；
+ * - 参数按 category,tag,year,q,fav,make,model,lens,view 的规范顺序序列化；
  * - fav 仅当值恰为 "1" 时输出（其余值视为未收藏）；
  * - keep 模式下 current.view === "calendar" 不透传（日历是月份文件夹特殊视图，
  *   任何筛选操作即退出）；显式 patch.view 优先；
@@ -11,7 +11,7 @@
  * - month 不参与构造（单月视图链接由日历/月份入口直接生成）。
  */
 
-export type FilterKey = "category" | "tag" | "year" | "q" | "fav" | "view";
+export type FilterKey = "category" | "tag" | "year" | "q" | "fav" | "make" | "model" | "lens" | "view";
 
 /** 当前 URL 中的筛选状态（值来自 searchParams，均为原始字符串）。 */
 export type FilterValues = Readonly<Partial<Record<FilterKey, string | undefined>>>;
@@ -28,7 +28,7 @@ export interface BuildFilterUrlOptions {
   unset?: "clear" | "keep";
 }
 
-const FILTER_KEYS: readonly FilterKey[] = ["category", "tag", "year", "q", "fav", "view"];
+const FILTER_KEYS: readonly FilterKey[] = ["category", "tag", "year", "q", "fav", "make", "model", "lens", "view"];
 
 /** 构造首页筛选链接；无有效参数时返回 "/"。 */
 export function buildFilterUrl(
@@ -67,11 +67,15 @@ export interface PhotoContext {
   year?: number;
   q?: string;
   fav?: boolean;
+  /** 器材筛选（功能 3）：相机双维度 + 镜头，列表→详情→相邻导航全程透传 */
+  make?: string;
+  model?: string;
+  lens?: string;
   month?: string;
 }
 
 /**
- * 序列化 PhotoContext 为规范顺序（category,tag,year,q,fav,month）的 URLSearchParams；
+ * 序列化 PhotoContext 为规范顺序（category,tag,year,q,fav,make,model,lens,month）的 URLSearchParams；
  * photoHref 与 PhotoGrid.loadMore 共用，参数词汇表的唯一出处。
  */
 export function contextToParams(ctx: PhotoContext): URLSearchParams {
@@ -81,6 +85,9 @@ export function contextToParams(ctx: PhotoContext): URLSearchParams {
   if (ctx.year) params.set("year", String(ctx.year));
   if (ctx.q) params.set("q", ctx.q);
   if (ctx.fav) params.set("fav", "1");
+  if (ctx.make) params.set("make", ctx.make);
+  if (ctx.model) params.set("model", ctx.model);
+  if (ctx.lens) params.set("lens", ctx.lens);
   if (ctx.month) params.set("month", ctx.month);
   return params;
 }

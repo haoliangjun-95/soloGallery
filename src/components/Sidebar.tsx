@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { buildFilterUrl, type FilterPatch } from "@/lib/filter-url";
+import type { GearLists } from "@/lib/gear";
 import { getSettings } from "@/lib/settings";
 import type { CategoryDTO, TagDTO } from "@/lib/types";
 import RandomWalkLink from "@/components/RandomWalkLink";
@@ -13,12 +14,18 @@ export interface SidebarFilters {
   view?: string;
   month?: string;
   random?: string;
+  /** 器材筛选（功能 3）：归一化后的原始字符串，用于选中态比对 */
+  make?: string;
+  model?: string;
+  lens?: string;
 }
 
 interface Props {
   categories: CategoryDTO[];
   tags: TagDTO[];
   years: { year: number; count: number }[];
+  /** 器材分组数据（相机 + 镜头，功能 3） */
+  gear: GearLists;
   totalAll: number;
   totalFav: number;
   sp: SidebarFilters;
@@ -71,18 +78,38 @@ function IconShuffle() {
   );
 }
 
+function IconCamera() {
+  return (
+    <svg className={ICON} viewBox="0 0 24 24" {...STROKE} aria-hidden>
+      <path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </svg>
+  );
+}
+
+function IconAperture() {
+  return (
+    <svg className={ICON} viewBox="0 0 24 24" {...STROKE} aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3v7.5M20.8 16.5l-6.5-3.7M3.2 16.5l6.5-3.7" />
+    </svg>
+  );
+}
+
 /**
  * 左侧栏：磨砂深色面板，顶部头像+画廊名，核心入口卡片，
- * 下方 分类/年份/标签 分组。选中态 = 柔和高亮 + 浅金左侧指示条。
+ * 下方 分类/年份/标签/器材 分组。选中态 = 柔和高亮 + 浅金左侧指示条。
  */
-export default async function Sidebar({ categories, tags, years, totalAll, totalFav, sp }: Props) {
+export default async function Sidebar({ categories, tags, years, gear, totalAll, totalFav, sp }: Props) {
   const settings = await getSettings().catch(() => null);
   const siteName = settings?.siteTitle || "soloGallery";
 
   const favActive = sp.fav === "1";
   const calActive = sp.view === "calendar";
   const randomActive = Boolean(sp.random);
-  const noneActive = !sp.category && !sp.tag && !sp.year && !favActive && !calActive && !sp.month && !randomActive;
+  const noneActive =
+    !sp.category && !sp.tag && !sp.year && !favActive && !calActive && !sp.month && !randomActive &&
+    !sp.make && !sp.model && !sp.lens;
 
   /** 覆盖一组互斥维度，保留搜索词。view/month 仅在显式指定时保留，其余入口会退出日历/单月视图。 */
   const href = (patch: FilterPatch) =>
@@ -150,6 +177,32 @@ export default async function Sidebar({ categories, tags, years, totalAll, total
           <Group title="标签">
             {tags.map((t) => (
               <Item key={t.id} href={href({ tag: t.name })} active={sp.tag === t.name} label={`#${t.name}`} count={t.count} />
+            ))}
+          </Group>
+        ) : null}
+
+        {gear.cameras.length + gear.lenses.length > 0 ? (
+          <Group title="器材">
+            {gear.cameras.map((c) => (
+              <Item
+                key={`cam-${c.make ?? ""}|${c.model ?? ""}`}
+                // 相机 = make+model 双参数定位（组合展示名不可靠反拆）；clear 语义自动清掉 lens 等其余维度
+                href={href({ make: c.make, model: c.model })}
+                active={sp.make === c.make && sp.model === c.model}
+                label={c.label}
+                count={c.count}
+                icon={<IconCamera />}
+              />
+            ))}
+            {gear.lenses.map((l) => (
+              <Item
+                key={`lens-${l.lens}`}
+                href={href({ lens: l.lens })}
+                active={sp.lens === l.lens}
+                label={l.lens}
+                count={l.count}
+                icon={<IconAperture />}
+              />
             ))}
           </Group>
         ) : null}
