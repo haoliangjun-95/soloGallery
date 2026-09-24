@@ -34,7 +34,12 @@ export interface NotifyConfig {
 
 export interface NotifyMessage {
   title: string;
+  /** 用户可控文本（昵称：正文摘要）——serverchan 分支包进围栏代码块防
+   *  markdown 注入（评审收编 M-1），telegram 纯文本原样携带 */
   text: string;
+  /** 详情页链接（siteUrl() 服务端拼装，不含用户可控成分）——serverchan
+   *  渲染在代码块之外单独成行（可安全点击），telegram 拼在正文末尾 */
+  url?: string;
 }
 
 /** 设置字符串 → 受支持 provider；空串（默认关闭）/未知值/大小写不符 → null */
@@ -53,7 +58,8 @@ export function truncateNotifyText(text: string, max: number = NOTIFY_TEXT_MAX):
   return chars.length > max ? `${chars.slice(0, max).join("")}…` : text;
 }
 
-/** 评论通知文案：标题带待审核标记，正文 = 昵称：内容摘要 [+ 照片链接行] */
+/** 评论通知文案：标题带待审核标记，text = 昵称：内容摘要，链接单独走 url
+ * （收编 M-1：用户可控文本与站点侧链接分离，serverchan 分支才能只对前者围栏） */
 export function buildCommentNotifyMessage(input: {
   nickname: string;
   content: string;
@@ -62,9 +68,11 @@ export function buildCommentNotifyMessage(input: {
   photoUrl?: string;
 }): NotifyMessage {
   const title = `新评论${input.moderated ? "（待审核）" : ""}：${truncateNotifyText(input.photoTitle, TITLE_PHOTO_MAX)}`;
-  const lines = [`${input.nickname}：${truncateNotifyText(input.content)}`];
-  if (input.photoUrl) lines.push(input.photoUrl);
-  return { title, text: lines.join("\n") };
+  return {
+    title,
+    text: `${input.nickname}：${truncateNotifyText(input.content)}`,
+    url: input.photoUrl,
+  };
 }
 
 /**
@@ -89,32 +97,40 @@ export function buildNotifyRequest(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
-          text: `${message.title}\n${message.text}`,
+          // 无 parse_mode 即纯文本渲染，用户可控内容无注入面；关链接预览
+          text: `${message.title}\n${message.text}${message.url ? `\n${message.url}` : ""}`,
           disable_web_page_preview: true,
         }),
       },
     };
   }
 
-  // serverchan：title + desp（markdown 正文，纯文本亦兼容）
+  // serverchan：title + desp（markdown 渲染）。收编 M-1：评论者可控文本包进
+  // 围栏代码块——反引号全部剥离（围栏不可被提前闭合），markdown 链接/追踪
+  // 像素在管理员的微信推送里只以源码呈现不可点击；站点侧 url（siteUrl()
+  // 拼装，不含用户成分）留在块外单独成行保持可点
+  const fenced = message.text.replace(/`/g, "");
+  const desp = `\`\`\`\n${fenced}\n\`\`\`${message.url ? `\n\n${message.url}` : ""}`;
   return {
     url,
     init: {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: message.title, desp: message.text }),
+      body: JSON.stringify({ title: message.title, desp }),
     },
   };
 }
 
 /**
  * 副作用发送：fire-and-forget 的终点。任何失败只 warn 不抛——调用方
- * （评论路由）以 void 触发，评论入库响应不等待、不受影响。
+ * （评论路由）经 after() 触发，评论入库响应不等待、不受影响。
+ * 收编 L-1：buildNotifyRequest 也在 try 内——「永不抛出」是结构保证而非
+ * 「当前实现恰好抛不了」的巧合（调用点不 await，rejection 无人接住）。
  */
 export async function sendNotify(config: NotifyConfig, message: NotifyMessage): Promise<void> {
-  const req = buildNotifyRequest(config, message);
-  if (!req) return;
   try {
+    const req = buildNotifyRequest(config, message);
+    if (!req) return;
     const res = await fetch(req.url, {
       ...req.init,
       signal: AbortSignal.timeout(NOTIFY_TIMEOUT_MS),

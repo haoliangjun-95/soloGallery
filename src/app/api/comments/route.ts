@@ -1,7 +1,8 @@
-import { NextRequest } from "next/server";
+import { after, NextRequest } from "next/server";
 import { z } from "zod";
 import { badRequest, json } from "@/lib/api";
 import { COMMENT_CONTENT_MAX } from "@/lib/comment-view";
+import { siteUrl } from "@/lib/config";
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
 import { buildCommentNotifyMessage, sendNotify } from "@/lib/notify";
@@ -79,22 +80,30 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // 功能 14：IM 通知 fire-and-forget 旁路——复用已取的 settings（零额外 DB
-  // 读）；void 不 await，sendNotify 内部永不抛出（失败只 warn），评论响应
-  // 不受推送延迟/失败影响。SPAM 路径刻意不通知（上方已提前 return）
-  void sendNotify(
-    {
-      provider: settings.notifyProvider,
-      webhookUrl: settings.notifyWebhookUrl,
-      chatId: settings.notifyChatId,
-    },
-    buildCommentNotifyMessage({
-      nickname: parsed.data.nickname,
-      content: parsed.data.content,
-      photoTitle: photo.title || photo.sha1.slice(0, 12),
-      moderated,
-      photoUrl: `${new URL(request.url).origin}/photo/${photo.sha1}`,
-    }),
+  // 功能 14：IM 通知旁路——复用已取的 settings（零额外 DB 读）；sendNotify
+  // 内部永不抛出（失败只 warn），评论响应不受推送延迟/失败影响。SPAM 路径
+  // 刻意不通知（上方已提前 return）。
+  // 收编 M-2：裸 void 改为 after() 官方生命周期（bundled docs after.md：
+  // Route Handler 响应发送完毕后执行，错误/notFound/redirect 路径也执行，
+  // serverless 平台可等待）——消除响应后冻结丢通知的技术债。
+  // 收编 H-1：photoUrl 用 siteUrl() 单一出处（feed.xml/sitemap/OG 同款）——
+  // request.url 的 origin 跟随 Host 头：直连部署是注入面（伪造 Host 让管理
+  // 员通知里的链接指向仿冒站），反代部署是死链（origin 成内部上游地址）
+  after(() =>
+    sendNotify(
+      {
+        provider: settings.notifyProvider,
+        webhookUrl: settings.notifyWebhookUrl,
+        chatId: settings.notifyChatId,
+      },
+      buildCommentNotifyMessage({
+        nickname: parsed.data.nickname,
+        content: parsed.data.content,
+        photoTitle: photo.title || photo.sha1.slice(0, 12),
+        moderated,
+        photoUrl: `${siteUrl()}/photo/${photo.sha1}`,
+      }),
+    ),
   );
 
   const message = moderated ? "评论已提交，审核通过后会显示" : "评论成功";
