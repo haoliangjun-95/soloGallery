@@ -34,9 +34,17 @@ const EAGER_FIRST_SCREEN = 8;
 /** 瀑布列（normal/masonry 共用）：columns-2 → sm:3 → xl:4 → 2xl:5 → min-2800:6 */
 const SIZES_COLUMNS =
   "(min-width: 2800px) 17vw, (min-width: 1536px) 20vw, (min-width: 1280px) 25vw, (min-width: 640px) 33vw, 50vw";
-/** 固定卡片（cover）：minmax(160px|40vw) → sm:230px → xl:290px，瓦片宽约 250-360px */
-const SIZES_FIXED_CARD = "(min-width: 1280px) 25vw, (min-width: 640px) 33vw, 45vw";
-/** 正方形纯图格：minmax(160px,1fr) auto-fill，瓦片宽恒 160-190px */
+/** 固定卡片（cover）：px 定死布局（sm minmax 230 / xl 290，gap 6px），auto-fill 最坏瓦片宽
+ *  = min+(min+gap)/n 上界：sm 带 2 列区至 ~347px、xl 带 3 列区至 ~388px → px 封顶替代 vw。
+ *  原 33vw 在 640-733 两列区报 211-244 低估实际 301-347（评审 L-1），25vw 在 ≥2560 报
+ *  640+ 使 DPR1 白下 800w（评审 L-3）；lg 侧栏带（实际 ~248-308）并入 sm 封顶——DPR1
+ *  下仍选 400w 最小档零代价，仅中 DPR 窄窗口选大一档，宁高估房规内。移动端 45vw 与
+ *  375 视口实际瓦片吻合（169 vs ~168）保留 */
+const SIZES_FIXED_CARD = "(min-width: 1280px) 390px, (min-width: 640px) 350px, 45vw";
+/** 正方形纯图格：minmax(160px,1fr) auto-fill，瓦片多为 160-200px；容器 326-479px 宽
+ *  两列时可达 ~240px（评审 L-2，原「恒 160-190px」失实）。值刻意保持 190px：提到
+ *  240px 会让 DPR2 手机（实际瓦片 ~170-200）全量改选 800w 字节翻倍，只换来罕见大
+ *  两列瓦片在 DPR2 下 400w 的轻微软化（0.83x）消除——不值 */
 const SIZES_SQUARE = "190px";
 /** 列表视图：h-10 w-16 固定 64px 宽小图 */
 const SIZES_LIST = "64px";

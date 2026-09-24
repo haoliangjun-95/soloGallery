@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { badRequest, guardAdmin, isPrismaNotFound, json } from "@/lib/api";
-import { displayKey } from "@/lib/bucket-layout";
+import { displayKey, GRID_WIDTHS, gridKey } from "@/lib/bucket-layout";
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
 import { deleteKey } from "@/lib/s3";
@@ -95,6 +95,12 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
   // 画廊资产：display 一定清理；原图/缩略图属壁纸软件，仅 UPLOAD 来源且明确要求 purge 时删原图
   await deleteKey(displayKey(photo.sha1)).catch((err) => logger.warn("删除 display 失败", err));
+  // 网格变体同为画廊自有资产、同在 display/ 匿名读前缀（评审 H-1：不清理则删除后
+  // 确定性 URL 仍可取回已删内容）。无条件逐档删——DELETE 不存在的键是 no-op，
+  // 顺带自愈全或无上传失败留下的孤儿档（gridReady=false 但单档已入桶）
+  for (const w of GRID_WIDTHS) {
+    await deleteKey(gridKey(photo.sha1, w)).catch((err) => logger.warn("删除 grid 变体失败", err));
+  }
   if (purge && photo.source === "UPLOAD") {
     await deleteKey(photo.storageKey).catch(() => undefined);
   }

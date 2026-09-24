@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { badRequest, guardAdmin, json } from "@/lib/api";
-import { displayKey } from "@/lib/bucket-layout";
+import { displayKey, GRID_WIDTHS, gridKey } from "@/lib/bucket-layout";
 import { prisma } from "@/lib/db";
 import { deleteKey } from "@/lib/s3";
 
@@ -45,6 +45,10 @@ export async function POST(request: NextRequest) {
       await prisma.photo.deleteMany({ where: { id: { in: photoIds } } });
       for (const p of photos) {
         await deleteKey(displayKey(p.sha1)).catch(() => undefined);
+        // 网格变体随 display 一并清理（评审 H-1：画廊自有资产同在匿名读前缀，
+        // 不清理则删除后确定性 URL 永久可取回）；无条件删——不存在的键是 no-op，
+        // 顺带自愈全或无上传失败留下的孤儿档
+        for (const w of GRID_WIDTHS) await deleteKey(gridKey(p.sha1, w)).catch(() => undefined);
       }
       break;
     }
