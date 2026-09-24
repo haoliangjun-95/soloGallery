@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { buildFilterUrl, type FilterPatch } from "@/lib/filter-url";
 import { getSettings } from "@/lib/settings";
 import type { CategoryDTO, TagDTO } from "@/lib/types";
 
@@ -73,25 +74,8 @@ export default async function Sidebar({ categories, tags, years, totalAll, total
   const noneActive = !sp.category && !sp.tag && !sp.year && !favActive && !calActive && !sp.month;
 
   /** 覆盖一组互斥维度，保留搜索词。view/month 仅在显式指定时保留，其余入口会退出日历/单月视图。 */
-  const href = (patch: Partial<SidebarFilters>) => {
-    const merged: SidebarFilters = {
-      category: "category" in patch ? patch.category : undefined,
-      tag: "tag" in patch ? patch.tag : undefined,
-      year: "year" in patch ? patch.year : undefined,
-      fav: "fav" in patch ? patch.fav : undefined,
-      view: "view" in patch ? patch.view : undefined,
-      q: sp.q,
-    };
-    const p = new URLSearchParams();
-    if (merged.category) p.set("category", merged.category);
-    if (merged.tag) p.set("tag", merged.tag);
-    if (merged.year) p.set("year", merged.year);
-    if (merged.fav === "1") p.set("fav", "1");
-    if (merged.view) p.set("view", merged.view);
-    if (merged.q) p.set("q", merged.q);
-    const s = p.toString();
-    return s ? `/?${s}` : "/";
-  };
+  const href = (patch: FilterPatch) =>
+    buildFilterUrl({}, { q: sp.q ?? null, ...patch }, { unset: "clear" });
 
   return (
     <nav aria-label="筛选菜单" className="hidden lg:block">

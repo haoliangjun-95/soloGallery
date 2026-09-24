@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { buildFilterUrl, type FilterPatch } from "@/lib/filter-url";
 import {
   countFavorites,
   listCategories,
@@ -46,32 +47,21 @@ export default async function HomePage({ searchParams }: Props) {
     view === "calendar" || month ? listMonths() : Promise.resolve([]),
   ]);
 
-  /** 移动端 chips 组合筛选链接（PC 由侧栏承担）。 */
-  const qs = (patch: {
-    category?: string | null;
-    tag?: string | null;
-    year?: number | null;
-    q?: string | null;
-    fav?: boolean | null;
-  }) => {
-    const params = new URLSearchParams();
-    const merged = {
-      category: "category" in patch ? patch.category : sp.category,
-      tag: "tag" in patch ? patch.tag : sp.tag,
-      year: "year" in patch ? (patch.year ? String(patch.year) : null) : sp.year,
-      q: "q" in patch ? patch.q : sp.q,
-      fav: "fav" in patch ? patch.fav : fav,
-    };
-    if (merged.category) params.set("category", merged.category);
-    if (merged.tag) params.set("tag", merged.tag);
-    if (merged.year) params.set("year", merged.year);
-    if (merged.q) params.set("q", merged.q);
-    if (merged.fav) params.set("fav", "1");
-    // 透传当前视图，点筛选 chip 不重置视图；calendar 是月份文件夹特殊模式，不透传（点 chip 即退出）
-    if (sp.view && sp.view !== "calendar") params.set("view", sp.view);
-    const s = params.toString();
-    return s ? `/?${s}` : "/";
-  };
+  /** 移动端 chips 组合筛选链接（PC 由侧栏承担）：未提及的维度叠加保留；
+   *  透传当前视图（calendar 除外——点 chip 即退出日历），month 不透传（退出单月视图）。 */
+  const qs = (patch: FilterPatch) =>
+    buildFilterUrl(
+      {
+        category: sp.category,
+        tag: sp.tag,
+        year: sp.year,
+        q: sp.q,
+        fav: fav ? "1" : undefined,
+        view: sp.view,
+      },
+      patch,
+      { unset: "keep" },
+    );
 
   // 日历视图：全量轻量数据按月分组平铺
   const calendarData = view === "calendar" ? await listPhotosCalendar() : null;
@@ -107,7 +97,7 @@ export default async function HomePage({ searchParams }: Props) {
           <FilterLink href={qs({ category: null, tag: null, year: null, q: null, fav: null })} active={!sp.category && !sp.tag && !sp.year && !fav && !month}>
             全部
           </FilterLink>
-          {fav ? null : <FilterLink href={qs({ fav: true })} active={fav}>★ 收藏</FilterLink>}
+          {fav ? null : <FilterLink href={qs({ fav: "1" })} active={fav}>★ 收藏</FilterLink>}
           <FilterLink href="/?view=calendar" active={view === "calendar"}>
             日历
           </FilterLink>
@@ -118,7 +108,7 @@ export default async function HomePage({ searchParams }: Props) {
             </FilterLink>
           ))}
           {years.map((y) => (
-            <FilterLink key={y.year} href={qs({ year: y.year })} active={sp.year === String(y.year)}>
+            <FilterLink key={y.year} href={qs({ year: String(y.year) })} active={sp.year === String(y.year)}>
               {y.year}
             </FilterLink>
           ))}
