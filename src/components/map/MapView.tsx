@@ -9,8 +9,10 @@
  *   WGS-84 瓦片（天地图/OSM）直接落图
  * - zoomend 重算聚合（map-cluster.ts 纯函数，Leaflet 侧只做渲染）
  * - 弹窗内容全部 DOM API 构建、文本一律 textContent（title/地名是用户数据，永不 innerHTML）
+ * - 加载失败不静默：chunk 404/初始化异常 → 错误态 + 显式重试（容器按 key 换新，
+ *   绕开 Leaflet 半初始化时已写入的 _leaflet_id）
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import { wgs84ToGcj02 } from "@/lib/geo-transform";
 import { clusterPoints, type MapCluster } from "@/lib/map-cluster";
@@ -35,6 +37,12 @@ const MAX_POPUP_THUMBS = 12;
 
 export default function MapView({ points, tileUrl, tileSubdomains, gcj02, maxZoom, attribution }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  /** Leaflet chunk 加载失败/初始化异常：不再静默空白地图——置错误态给显式重试入口
+   *  （评审 M-2，PhotoGrid 翻页失败态同款"不静默吞错"姿态） */
+  const [failed, setFailed] = useState(false);
+  /** 重试计数，兼作容器 div 的 key：重试即整体换新容器，天然绕开 Leaflet 半初始化时
+   *  已写入的 _leaflet_id（复用旧容器会 "Map container is already initialized"） */
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -44,44 +52,75 @@ export default function MapView({ points, tileUrl, tileSubdomains, gcj02, maxZoo
     let map: import("leaflet").Map | undefined;
 
     (async () => {
-      const L = (await import("leaflet")).default;
-      // 动态 import 期间组件可能已卸载（StrictMode 双挂载 / 快速导航）
-      if (disposed || !container.isConnected) return;
+      try {
+        const L = (await import("leaflet")).default;
+        // 动态 import 期间组件可能已卸载（StrictMode 双挂载 / 快速导航）
+        if (disposed || !container.isConnected) return;
 
-      // GCJ-02 瓦片需要坐标偏移（几百米量级）；map 出新对象，不触碰入参
-      const projected = gcj02 ? points.map((p) => ({ ...p, ...wgs84ToGcj02(p.lat, p.lon) })) : points;
+        // GCJ-02 瓦片需要坐标偏移（几百米量级）；map 出新对象，不触碰入参
+        const projected = gcj02 ? points.map((p) => ({ ...p, ...wgs84ToGcj02(p.lat, p.lon) })) : points;
 
-      const m = L.map(container);
-      map = m; // 交给 cleanup 销毁
-      L.tileLayer(tileUrl, { subdomains: tileSubdomains, maxZoom, attribution }).addTo(m);
-      const clusterLayer = L.layerGroup().addTo(m);
+        const m = L.map(container);
+        map = m; // 交给 cleanup 销毁
+        // attribution 经 Leaflet 归因控件以 innerHTML 渲染：MAP_TILE_ATTRIBUTION 是管理端
+        // env（受信配置而非用户输入），刻意保留 HTML 能力（© 链接等）；该入口须保持管理端专属（评审 L-1）
+        L.tileLayer(tileUrl, { subdomains: tileSubdomains, maxZoom, attribution }).addTo(m);
+        const clusterLayer = L.layerGroup().addTo(m);
 
-      const draw = () => {
-        clusterLayer.clearLayers();
-        for (const cluster of clusterPoints(projected, m.getZoom())) {
-          L.marker([cluster.lat, cluster.lon], { icon: countIcon(L, cluster.points.length) })
-            .bindPopup(() => buildPopup(cluster), { maxWidth: 264 })
-            .addTo(clusterLayer);
-        }
-      };
+        const draw = () => {
+          clusterLayer.clearLayers();
+          for (const cluster of clusterPoints(projected, m.getZoom())) {
+            const marker = L.marker([cluster.lat, cluster.lon], { icon: countIcon(L, cluster.points.length) })
+              .bindPopup(() => buildPopup(cluster), { maxWidth: 264 })
+              .addTo(clusterLayer);
+            // Leaflet 的 alt 选项只对 <img> 图标生效（Marker.js `tagName === 'IMG'` 守卫）；
+            // divIcon 的键盘可聚焦元素（role=button + tabIndex）需手动补可访问名（评审 L-4）
+            marker.getElement()?.setAttribute("aria-label", `${cluster.points.length} 张照片，点击展开缩略图`);
+          }
+        };
 
-      m.on("zoomend", draw);
-      m.fitBounds(
-        L.latLngBounds(projected.map((p) => [p.lat, p.lon] as [number, number])),
-        // 单点/小范围时 fitBounds 会顶到 maxZoom，15 级封顶留街区上下文
-        { maxZoom: 15, padding: [40, 40] },
-      );
-      draw();
+        m.on("zoomend", draw);
+        m.fitBounds(
+          L.latLngBounds(projected.map((p) => [p.lat, p.lon] as [number, number])),
+          // 单点/小范围时 fitBounds 会顶到 maxZoom，15 级封顶留街区上下文
+          { maxZoom: 15, padding: [40, 40] },
+        );
+        draw();
+      } catch {
+        // 动态 import 404（部署后 chunk hash 失效）或 Leaflet 初始化异常：置错误态给显式
+        // 重试，而不是只剩控制台里的 unhandled rejection + 永久空白地图（评审 M-2）
+        if (!disposed) setFailed(true);
+      }
     })();
 
     return () => {
       disposed = true;
-      map?.remove(); // 解绑事件 + 释放瓦片/图层
+      map?.remove(); // 解绑事件 + 释放瓦片/图层（半初始化态亦安全）
       map = undefined;
     };
-  }, [points, tileUrl, tileSubdomains, gcj02, maxZoom, attribution]);
+  }, [points, tileUrl, tileSubdomains, gcj02, maxZoom, attribution, attempt]);
 
-  return <div ref={containerRef} className="h-full w-full bg-card" role="application" aria-label="照片地图" />;
+  return (
+    <div className="relative h-full w-full">
+      <div key={attempt} ref={containerRef} className="h-full w-full bg-card" role="application" aria-label="照片地图" />
+      {failed ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-card/95 px-4 text-center">
+          <p className="text-sm text-muted">地图资源加载失败，可能是网络问题或站点刚完成更新</p>
+          <button
+            type="button"
+            onClick={() => {
+              // 先清错误态再递增 attempt：新容器挂载后 effect 重跑（attempt 在 deps 中）
+              setFailed(false);
+              setAttempt((a) => a + 1);
+            }}
+            className="min-h-11 rounded-full border border-amber-500/40 bg-amber-500/10 px-4 text-sm text-amber-300 transition-colors hover:bg-amber-500/20 focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2"
+          >
+            重新加载地图
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** 标记气泡：数字即簇大小。html 只插值数字（length/size），无注入面 */

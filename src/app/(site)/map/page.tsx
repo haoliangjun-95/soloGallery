@@ -20,7 +20,11 @@ const MAX_ZOOM = 18;
 export default async function MapPage() {
   const points = await listMapPoints();
   const tileUrl = process.env.MAP_TILE_URL ?? DEFAULT_TILE_URL;
-  const tileSubdomains = (process.env.MAP_TILE_SUBDOMAINS ?? DEFAULT_TILE_SUBDOMAINS).split(",").filter(Boolean);
+  // 逐段 trim：手写 env "1, 2, 3" 的空格会拼出非法主机名 webrd0 2.is.autonavi.com，瓦片静默全挂（评审 L-2）
+  const tileSubdomains = (process.env.MAP_TILE_SUBDOMAINS ?? DEFAULT_TILE_SUBDOMAINS)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   const gcj02 = (process.env.MAP_TILE_GCJ02 ?? "true") !== "false";
   const attribution = process.env.MAP_TILE_ATTRIBUTION ?? DEFAULT_TILE_ATTRIBUTION;
 

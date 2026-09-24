@@ -549,12 +549,14 @@ export const listMapPoints = cache(async (): Promise<MapPointDTO[]> => {
            JSON_UNQUOTE(JSON_EXTRACT(exif, '$.gps.location')) AS location
     FROM Photo
     WHERE JSON_EXTRACT(exif, '$.gps.lat') IS NOT NULL
+      AND JSON_EXTRACT(exif, '$.gps.lon') IS NOT NULL
       AND published = 1 AND missing = 0
     ORDER BY id ASC
   `;
   return rows
-    // 纵深防御：驱动可能把 JSON 数值回传为字符串；非有限值（脏数据）直接丢弃
-    .filter((r) => Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lon)))
+    // 纵深防御：驱动可能把 JSON 数值回传为字符串；SQL NULL 需显式排除——
+    // Number(null) === 0 能穿过 isFinite，半截 gps（有 lat 无 lon）会成 (lat,0) 幻影点（评审 M-1）
+    .filter((r) => r.lat != null && r.lon != null && Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lon)))
     .map((r) => ({
       sha1: r.sha1,
       title: r.title,
