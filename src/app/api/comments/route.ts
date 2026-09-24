@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { badRequest, json } from "@/lib/api";
+import { COMMENT_CONTENT_MAX } from "@/lib/comment-view";
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
 import { buildCommentNotifyMessage, sendNotify } from "@/lib/notify";
@@ -22,7 +23,7 @@ const schema = z.object({
     .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "邮箱格式不正确")
     .optional()
     .or(z.literal("")),
-  content: z.string().trim().min(1).max(2000),
+  content: z.string().trim().min(1).max(COMMENT_CONTENT_MAX),
   website: z.string().optional(), // 蜜罐：正常用户不会填
 });
 

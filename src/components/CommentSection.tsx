@@ -2,6 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import {
+  COMMENT_CONTENT_MAX,
+  COMMENT_PAGE_SIZE,
+  expandVisible,
+  isNearCommentLimit,
+  sliceComments,
+} from "@/lib/comment-view";
 import { DISPLAY_TZ } from "@/lib/time";
 import type { CommentDTO } from "@/lib/types";
 
@@ -19,6 +26,13 @@ export default function CommentSection({
   // 直接渲染 prop（派生值）而非 useState 冻结快照：
   // 自动过审模式下 router.refresh() 拉回的新 initialComments 才能立即上屏
   const comments = initialComments;
+  // 功能 13：客户端渐进分页——首屏 5 条，「查看更多」每次 +5（lib/comment-view.ts
+  // 纯函数切片）；刻意不做服务端游标分页：单人博客量级下 RSC 一次给全量 +
+  // 客户端切片零额外请求、零公开 GET API 面（技术债已记清单）
+  const [visible, setVisible] = useState(COMMENT_PAGE_SIZE);
+  const [expandedAll, setExpandedAll] = useState(false);
+  const shown = sliceComments(comments, visible, expandedAll);
+  const hidden = comments.length - shown.length;
   const [nickname, setNickname] = useState("");
   const [email, setEmail] = useState("");
   const [content, setContent] = useState("");
@@ -66,7 +80,12 @@ export default function CommentSection({
         /* localStorage 不可用时忽略 */
       }
       // 自动通过模式：刷新让新评论立即出现
-      if (data.moderated === false) router.refresh();
+      if (data.moderated === false) {
+        // 先全量展开再刷新：评论 asc 排序、新评论在末尾，若仍按 visible
+        // 切片，refresh 拉回的新评论会落在隐藏区「发了却看不见」
+        setExpandedAll(true);
+        router.refresh();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "提交失败");
     } finally {
@@ -114,10 +133,20 @@ export default function CommentSection({
           onChange={(e) => setContent(e.target.value)}
           placeholder="说点什么…"
           required
-          maxLength={2000}
+          maxLength={COMMENT_CONTENT_MAX}
           rows={3}
           className="w-full rounded-lg bg-background border border-edge px-3 py-2 text-sm outline-none focus:border-foreground/40 resize-y"
         />
+        {/* 功能 13：实时字数计数——maxLength 静默截断改为可见余量，≥90% 琥珀预警 */}
+        <div className="flex justify-end">
+          <span
+            className={`text-xs tabular-nums ${
+              isNearCommentLimit(content.length) ? "text-amber-400" : "text-muted"
+            }`}
+          >
+            {content.length} / {COMMENT_CONTENT_MAX}
+          </span>
+        </div>
         {message ? <p className="text-sm text-emerald-400">{message}</p> : null}
         {error ? <p className="text-sm text-red-400">{error}</p> : null}
         <button
@@ -130,23 +159,34 @@ export default function CommentSection({
       </form>
 
       {comments.length > 0 ? (
-        <ul className="mt-6 space-y-4">
-          {comments.map((c) => (
-            <li key={c.id} className="border-t border-edge pt-4 first:border-0 first:pt-0">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-sm font-medium">{c.nickname}</span>
-                <time className="text-xs text-muted">{formatTime(c.createdAt)}</time>
-              </div>
-              <p className="mt-1 text-sm text-foreground/90 whitespace-pre-wrap break-words">{c.content}</p>
-              {c.adminReply ? (
-                <div className="mt-2 rounded-lg bg-foreground/5 border border-edge px-3 py-2">
-                  <span className="text-xs font-medium text-foreground">作者回复：</span>
-                  <p className="mt-1 text-sm text-foreground/90 whitespace-pre-wrap break-words">{c.adminReply}</p>
+        <>
+          <ul className="mt-6 space-y-4">
+            {shown.map((c) => (
+              <li key={c.id} className="border-t border-edge pt-4 first:border-0 first:pt-0">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium">{c.nickname}</span>
+                  <time className="text-xs text-muted">{formatTime(c.createdAt)}</time>
                 </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+                <p className="mt-1 text-sm text-foreground/90 whitespace-pre-wrap break-words">{c.content}</p>
+                {c.adminReply ? (
+                  <div className="mt-2 rounded-lg bg-foreground/5 border border-edge px-3 py-2">
+                    <span className="text-xs font-medium text-foreground">作者回复：</span>
+                    <p className="mt-1 text-sm text-foreground/90 whitespace-pre-wrap break-words">{c.adminReply}</p>
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {hidden > 0 ? (
+            <button
+              type="button"
+              onClick={() => setVisible((v) => expandVisible(v, comments.length))}
+              className="mt-4 w-full rounded-lg border border-edge px-4 py-2 text-sm text-muted hover:text-foreground"
+            >
+              查看更多评论（剩余 {hidden} 条）
+            </button>
+          ) : null}
+        </>
       ) : (
         <p className="mt-6 text-sm text-muted">还没有评论，来抢沙发。</p>
       )}
