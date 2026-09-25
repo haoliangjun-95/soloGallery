@@ -360,16 +360,19 @@ export async function getAdjacentPhotos(
         select: ADJACENT_SELECT,
       });
     }
-    const lastNonNull = await prisma.photo.findFirst({
-      where: { AND: [where, { shotAt: { not: null } }] },
-      orderBy: [{ shotAt: "asc" }, { createdAt: "asc" }],
+    // 列序 null 段按 createdAt 倒序排在末尾：当前是段内第 2+ 行时，上一张是段内
+    // createdAt 更大的最近一条；仅当当前是段首才回退到非空段末尾（最旧一张）。
+    // 顺序不能反——先取 lastNonNull 会跳过 null 段邻居（无 EXIF 上传即产生该段）
+    const nullSegPrev = await prisma.photo.findFirst({
+      where: { AND: [where, { shotAt: null, createdAt: { gt: cur.createdAt } }] },
+      orderBy: { createdAt: "asc" },
       select: ADJACENT_SELECT,
     });
     return (
-      lastNonNull ??
+      nullSegPrev ??
       prisma.photo.findFirst({
-        where: { AND: [where, { shotAt: null, createdAt: { gt: cur.createdAt } }] },
-        orderBy: { createdAt: "asc" },
+        where: { AND: [where, { shotAt: { not: null } }] },
+        orderBy: [{ shotAt: "asc" }, { createdAt: "asc" }],
         select: ADJACENT_SELECT,
       })
     );

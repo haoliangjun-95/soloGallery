@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { patchById } from "@/lib/optimistic";
 import { isOversized, MAX_FILE_BYTES, summarizeQueue, toQueueOutcome } from "@/lib/upload-queue";
 import type { QueueStatus } from "@/lib/upload-queue";
@@ -44,6 +44,18 @@ export default function UploadClient() {
 
   const summary = summarizeQueue(queue);
 
+  // 上传进行中拦截离开（导航/关标签页）：剩余任务会静默丢失且无提示——
+  // 批量传几十个 30MB 文件耗时数分钟，管理端顶部导航就在旁边，误触概率不低
+  useEffect(() => {
+    if (!running) return;
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [running]);
+
   function addFiles(files: FileList | File[]) {
     const images = [...files].filter((f) => f.type.startsWith("image/"));
     if (!images.length) return;
@@ -85,6 +97,13 @@ export default function UploadClient() {
       form.append("files", item.file);
       const xhr = new XMLHttpRequest();
       xhr.open("POST", "/api/admin/upload");
+      // 无超时的 XHR 悬挂（代理停滞等）时 Promise 永不 settle → running 恒 true；
+      // 30MB 慢上链留足余量，5 分钟兜底走 ontimeout settle
+      xhr.timeout = 5 * 60 * 1000;
+      xhr.ontimeout = () => {
+        updateItem(item.id, { status: "error", message: "上传超时" });
+        resolve();
+      };
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
           updateItem(item.id, { progress: Math.round((e.loaded / e.total) * 100) });
