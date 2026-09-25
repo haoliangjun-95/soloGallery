@@ -71,18 +71,26 @@ export default async function HomePage({ searchParams }: Props) {
   const isDefaultHome =
     !isRandom && !category && !tag && !year && !q && !fav && !month && !make && !model && !lens && view !== "calendar";
 
-  const [categories, tags, years, gear, favCount, calendarMonths, memories, randomItems] = await Promise.all([
-    listCategories(),
-    listTags(),
-    listYears(),
-    listGear(),
-    countFavorites(),
-    // 日历视图与单月切换都需要月份列表，一次取齐
-    view === "calendar" || month ? listMonths() : Promise.resolve([]),
-    isDefaultHome ? listMemories() : Promise.resolve(null),
-    // 随机漫游：水塘抽样一批照片；total=items.length 使 PhotoGrid 初始即 done，天然禁用无限滚动
-    isRandom ? listRandomPhotos() : Promise.resolve(null),
-  ]);
+  // 首页三组数据无相互依赖，一次并行取齐（此前 calendar/listing 串行 await 多付一跳 DB 往返）
+  const [categories, tags, years, gear, favCount, calendarMonths, memories, randomItems, calendarData, listing] =
+    await Promise.all([
+      listCategories(),
+      listTags(),
+      listYears(),
+      listGear(),
+      countFavorites(),
+      // 日历视图与单月切换都需要月份列表，一次取齐
+      view === "calendar" || month ? listMonths() : Promise.resolve([]),
+      isDefaultHome ? listMemories() : Promise.resolve(null),
+      // 随机漫游：水塘抽样一批照片；total=items.length 使 PhotoGrid 初始即 done，天然禁用无限滚动
+      isRandom ? listRandomPhotos() : Promise.resolve(null),
+      // 日历视图：全量轻量数据按月分组平铺（随机模式优先，不取日历数据）
+      view === "calendar" && !isRandom ? listPhotosCalendar() : Promise.resolve(null),
+      // 非日历、非随机的常规列表（与 calendarData 互斥）
+      view !== "calendar" && !isRandom
+        ? listPhotos({ categorySlug: category, tag, year, q, favorite: fav, month, make, model, lens })
+        : Promise.resolve(null),
+    ]);
 
   /** 移动端 chips 组合筛选链接（PC 由侧栏承担）：未提及的维度叠加保留；
    *  透传当前视图（calendar 除外——点 chip 即退出日历），month 不透传（退出单月视图）。 */
@@ -103,15 +111,8 @@ export default async function HomePage({ searchParams }: Props) {
       { unset: "keep" },
     );
 
-  // 日历视图：全量轻量数据按月分组平铺（随机模式优先，不取日历数据）
-  const calendarData = view === "calendar" && !isRandom ? await listPhotosCalendar() : null;
-
-  // 单月视图数据
+  // 单月视图数据：月份列表已在上方并行取齐
   const monthIdx = month ? calendarMonths.findIndex((m) => m.ym === month) : -1;
-  const listing =
-    calendarData === null && !isRandom
-      ? await listPhotos({ categorySlug: category, tag, year, q, favorite: fav, month, make, model, lens })
-      : null;
   const total = randomItems ? randomItems.length : listing ? listing.total : 0;
   const pageSize = listing ? listing.pageSize : 60;
   const items = randomItems ?? (listing ? listing.items : []);

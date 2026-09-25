@@ -64,6 +64,8 @@ export default function SlideshowButton({ initial, context }: Props) {
   /** 打开时把焦点迁入对话框（M-2b）：焦点若留在被覆盖的入口按钮上，Enter 会
    *  原生激活它静默重播；Tab 也能绕回被覆盖层（无焦点陷阱，与既有灯箱一致） */
   const dialogRef = useRef<HTMLDivElement>(null);
+  /** 关闭后焦点归还入口按钮：对话框卸载焦点会跌回 body，键盘/读屏用户丢失原位（WCAG 2.4.3） */
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const start = useCallback(() => {
     abortRef.current?.abort();
@@ -101,6 +103,7 @@ export default function SlideshowButton({ initial, context }: Props) {
   const close = useCallback(() => {
     abortRef.current?.abort();
     setOpen(false);
+    triggerRef.current?.focus();
   }, []);
 
   const goNext = useCallback(() => setIndex((i) => nextIndex(i, playlist.length)), [playlist.length]);
@@ -109,21 +112,22 @@ export default function SlideshowButton({ initial, context }: Props) {
   // 组件卸载兜底中止（快速导航离开详情页时不留悬挂请求）
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  // 自动切换：index 在依赖中 → 每张重置计时；手动切换/暂停/单张列表都自然停表
+  // 自动切换：index 在依赖中 → 每张重置计时；手动切换/暂停/单张列表都自然停表。
+  // error 门控：重开失败时 playlist 仍是旧列表，不拦会隐形轮播 + 预取无人看的变体
   useEffect(() => {
-    if (!open || !playing || playlist.length < 2) return;
+    if (!open || !playing || error || playlist.length < 2) return;
     const timer = setTimeout(() => setIndex((i) => nextIndex(i, playlist.length)), SLIDE_INTERVAL_MS);
     return () => clearTimeout(timer);
-  }, [open, playing, index, playlist.length]);
+  }, [open, playing, error, index, playlist.length]);
 
-  // 预取下一张的 display 变体：淡入时不出现空窗
+  // 预取下一张的 display 变体：淡入时不出现空窗（error 同上不预取）
   useEffect(() => {
-    if (!open || playlist.length < 2) return;
+    if (!open || error || playlist.length < 2) return;
     const upcoming = playlist[nextIndex(index, playlist.length)];
     if (!upcoming) return;
     const img = new Image();
     img.src = upcoming.displayUrl;
-  }, [open, index, playlist]);
+  }, [open, error, index, playlist]);
 
   // 全屏接管：锁滚动 + lightbox 标记（BackOnEsc/PhotoNav 据此让位），Esc/←/→/空格
   useEffect(() => {
@@ -170,6 +174,7 @@ export default function SlideshowButton({ initial, context }: Props) {
     <>
       <button
         type="button"
+        ref={triggerRef}
         onClick={start}
         className="rounded-full border border-edge px-3 py-1 text-sm text-muted transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2"
       >
@@ -191,9 +196,12 @@ export default function SlideshowButton({ initial, context }: Props) {
               stopPropagation 只在交互子元素与图片上 */}
           <div className="flex shrink-0 items-center justify-between gap-4 px-5 pt-4 text-sm text-white/85">
             <p className="min-w-0 truncate">
-              {/* loading 门控（L-2）：重开加载期间 playlist 仍是旧列表，不展示过期计数/标题 */}
-              <span aria-live="polite">{!loading && current ? `${index + 1} / ${playlist.length}` : "幻灯片"}</span>
-              {!loading && current ? <span className="ml-3 text-white/55">{current.title}</span> : null}
+              {/* loading/error 门控：重开加载或失败期间 playlist 仍是旧列表，不展示过期计数/标题。
+                  aria-live 仅手动浏览（暂停）时播报序号——自动轮播下每 4s 播报一次是读屏噪音 */}
+              <span aria-live={playing ? "off" : "polite"}>
+                {!loading && !error && current ? `${index + 1} / ${playlist.length}` : "幻灯片"}
+              </span>
+              {!loading && !error && current ? <span className="ml-3 text-white/55">{current.title}</span> : null}
             </p>
             <button
               type="button"

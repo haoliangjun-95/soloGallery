@@ -32,8 +32,9 @@ export interface GearLists {
   lenses: GearLens[];
 }
 
-/** 器材参数长度上限：真实 EXIF make/model/lensModel 远短于此，防超长垃圾串进查询与 URL。 */
-const GEAR_PARAM_MAX = 100;
+/** 器材参数长度上限：真实 EXIF make/model/lensModel 远短于此，防超长垃圾串进查询与 URL。
+ *  导出供 queries.listGear 聚合 SQL 同口径 LEFT 截断，保证侧栏标签与筛选参数一致。 */
+export const GEAR_PARAM_MAX = 100;
 
 /** searchParams → 器材筛选值：trim、空串视为未设、超长截断（与首页 q 同一防御姿态）。 */
 export function parseGearParam(value: string | undefined): string | undefined {

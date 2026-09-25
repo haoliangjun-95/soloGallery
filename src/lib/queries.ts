@@ -6,7 +6,7 @@ import { prisma } from "./db";
 import { getSettings } from "./settings";
 import { isAdmin } from "./auth";
 import { buildArchiveYear, type ArchiveMonth } from "./archive";
-import { buildGearCameras, buildGearLenses, gearWhere, parseGearParam, type GearLists } from "./gear";
+import { buildGearCameras, buildGearLenses, gearWhere, GEAR_PARAM_MAX, parseGearParam, type GearLists } from "./gear";
 import { hideGps } from "./geo";
 import { reservoirSample } from "./sample";
 import type { NormalizedExif } from "./exif";
@@ -522,14 +522,16 @@ export async function listArchiveYear(year: number): Promise<ArchiveMonth[]> {
  * JSON_EXTRACT 全表扫描——exif 无 JSON path 索引，个人库量级可接受（技术债清单有记录）。
  */
 export const listGear = cache(async (publishedOnly = true): Promise<GearLists> => {
+  // GROUP BY 用 SELECT 别名（MariaDB 支持，与 listMonths 的 GROUP BY ym 同款）；
+  // 键不存在 → SQL NULL、JSON null → 字符串 "null"，统一交 buildGear* 清洗。
+  // LEFT(..., GEAR_PARAM_MAX) 与 parseGearParam 同一截断口径：超长存储值聚合出的
+  // 标签与其链接参数一致，避免「侧栏计数>0 点进列表为空」（真实数据最长 35，纯防御）
   const { Prisma } = await import("@/generated/prisma/client");
   const cond = publishedOnly ? Prisma.sql`AND published = 1 AND missing = 0` : Prisma.empty;
-  // GROUP BY 用 SELECT 别名（MariaDB 支持，与 listMonths 的 GROUP BY ym 同款）；
-  // 键不存在 → SQL NULL、JSON null → 字符串 "null"，统一交 buildGear* 清洗
   const [cameraRows, lensRows] = await Promise.all([
     prisma.$queryRaw<Array<{ make: string | null; model: string | null; count: bigint }>>`
-      SELECT JSON_UNQUOTE(JSON_EXTRACT(exif, '$.make')) AS make,
-             JSON_UNQUOTE(JSON_EXTRACT(exif, '$.model')) AS model,
+      SELECT LEFT(JSON_UNQUOTE(JSON_EXTRACT(exif, '$.make')), ${GEAR_PARAM_MAX}) AS make,
+             LEFT(JSON_UNQUOTE(JSON_EXTRACT(exif, '$.model')), ${GEAR_PARAM_MAX}) AS model,
              COUNT(*) AS count
       FROM Photo
       WHERE exif IS NOT NULL ${cond}
@@ -537,7 +539,7 @@ export const listGear = cache(async (publishedOnly = true): Promise<GearLists> =
       ORDER BY count DESC
     `,
     prisma.$queryRaw<Array<{ lens: string | null; count: bigint }>>`
-      SELECT JSON_UNQUOTE(JSON_EXTRACT(exif, '$.lensModel')) AS lens, COUNT(*) AS count
+      SELECT LEFT(JSON_UNQUOTE(JSON_EXTRACT(exif, '$.lensModel')), ${GEAR_PARAM_MAX}) AS lens, COUNT(*) AS count
       FROM Photo
       WHERE exif IS NOT NULL ${cond}
       GROUP BY lens

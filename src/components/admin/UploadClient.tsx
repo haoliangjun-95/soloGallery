@@ -57,7 +57,10 @@ export default function UploadClient() {
   }, [running]);
 
   function addFiles(files: FileList | File[]) {
-    const images = [...files].filter((f) => f.type.startsWith("image/"));
+    // MIME 为空也按扩展名兜底收编：Windows Chrome/Edge 拖 HEIC 时 File.type 为 ""，
+    // 只认 image/* 会静默丢弃且无提示，与「支持 HEIC」的宣称矛盾（最终关卡是服务端魔数嗅探）
+    const imageExt = /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif|tiff?)$/i;
+    const images = [...files].filter((f) => f.type.startsWith("image/") || (f.type === "" && imageExt.test(f.name)));
     if (!images.length) return;
     // 在 updater 外构造新项：nextIdRef 自增是副作用，放进 setQueue updater
     // 会被 StrictMode 双调用重复计数（保持 updater 纯函数）
