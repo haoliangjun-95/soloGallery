@@ -2,10 +2,18 @@ import { NextRequest } from "next/server";
 import { json } from "@/lib/api";
 import { parseYear } from "@/lib/filter-url";
 import { listPhotos } from "@/lib/queries";
+import { clientIp, rateAllow } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
 
+/** 公开只读端点无限流则翻页可直连 DB —— 每分钟 120 次对无限滚动+预取绰绰有余 */
+const RATE_LIMIT = 120;
+const RATE_WINDOW_MS = 60 * 1000;
+
 export async function GET(request: NextRequest) {
+  if (!rateAllow(`photos:${clientIp(request.headers)}`, RATE_LIMIT, RATE_WINDOW_MS)) {
+    return json({ error: "请求过于频繁，请稍后再试" }, 429);
+  }
   const sp = request.nextUrl.searchParams;
   const result = await listPhotos({
     page: Number(sp.get("page") ?? 1) || 1,
