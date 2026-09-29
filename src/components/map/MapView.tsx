@@ -141,7 +141,7 @@ function buildPopup(cluster: MapCluster<MapPointDTO>): HTMLElement {
   const box = document.createElement("div");
 
   const head = document.createElement("p");
-  head.className = "mb-2 text-xs font-semibold text-neutral-700";
+  head.className = "mb-2 text-xs font-semibold text-neutral-200";
   head.textContent = `${members[0].location ?? "照片地点"} · ${members.length} 张`;
   box.appendChild(head);
 
@@ -162,7 +162,7 @@ function buildPopup(cluster: MapCluster<MapPointDTO>): HTMLElement {
   }
   if (members.length > MAX_POPUP_THUMBS) {
     const more = document.createElement("span");
-    more.className = "flex h-[54px] w-[54px] items-center justify-center rounded-md bg-neutral-200 text-xs font-medium text-neutral-600";
+    more.className = "flex h-[54px] w-[54px] items-center justify-center rounded-md bg-white/10 text-xs font-medium text-neutral-300";
     more.textContent = `+${members.length - MAX_POPUP_THUMBS}`;
     grid.appendChild(more);
   }

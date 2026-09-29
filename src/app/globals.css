@@ -80,3 +80,55 @@ html {
 .slideshow-fade {
   animation: slideshow-fade 600ms ease-out;
 }
+
+/* 地图 chrome 深色化（功能 1 打磨）：Leaflet 默认白底弹窗/缩放钮/归属条改为站点玻璃审美。
+ * 选择器统一加 .leaflet-container 前缀抬高特异性——leaflet.css chunk 在全局样式之后
+ * 加载，同特异性会被它压回；标记气泡已在 MapView divIcon 内联深色，此处只管控件 chrome */
+.leaflet-container .leaflet-popup-content-wrapper {
+  background: rgba(26, 26, 28, 0.92);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+}
+
+.leaflet-container .leaflet-popup-tip {
+  background: rgba(26, 26, 28, 0.92);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button {
+  color: var(--muted);
+}
+
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button:hover,
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button:focus {
+  color: var(--foreground);
+}
+
+.leaflet-container .leaflet-bar a {
+  background: rgba(26, 26, 28, 0.92);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+.leaflet-container .leaflet-bar a:hover,
+.leaflet-container .leaflet-bar a:focus {
+  background: rgba(42, 42, 46, 0.95);
+  color: var(--foreground);
+}
+
+.leaflet-container .leaflet-bar a.leaflet-disabled {
+  color: var(--muted);
+  background: rgba(26, 26, 28, 0.75);
+}
+
+.leaflet-container .leaflet-control-attribution.leaflet-control {
+  background: rgba(18, 18, 18, 0.7);
+  color: var(--muted);
+}
+
+.leaflet-container .leaflet-control-attribution.leaflet-control a {
+  color: var(--muted);
+}
