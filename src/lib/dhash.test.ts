@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  DHASH_DEFAULT_THRESHOLD,
   DHASH_HEX_LENGTH,
-  DHASH_SIMILAR_THRESHOLD,
+  DHASH_THRESHOLD_PRESETS,
   groupSimilar,
   hammingDistance,
   isValidDhash,
+  parseDhashThreshold,
   suggestKeeper,
   type SimilarEntry,
 } from "./dhash";
@@ -112,10 +114,10 @@ describe("groupSimilar", () => {
     expect(groups[0].members).toHaveLength(3);
   });
 
-  it("阈值默认值生效（DHASH_SIMILAR_THRESHOLD）", () => {
+  it("阈值默认值生效（DHASH_DEFAULT_THRESHOLD）", () => {
     const a = h(0);
-    // 低 (阈值+1) 位全 1：与 a 恰差 11 bit > 默认阈值 10
-    const bits = BigInt(DHASH_SIMILAR_THRESHOLD + 1);
+    // 低 (阈值+1) 位全 1：与 a 恰差 7 bit > 默认阈值 6
+    const bits = BigInt(DHASH_DEFAULT_THRESHOLD + 1);
     const b = ((BigInt(1) << bits) - BigInt(1)).toString(16).padStart(DHASH_HEX_LENGTH, "0");
     expect(groupSimilar([entry(1, a), entry(2, b)])).toHaveLength(0);
   });
@@ -154,5 +156,23 @@ describe("groupSimilar", () => {
 
   it("空输入返回空数组", () => {
     expect(groupSimilar([])).toEqual([]);
+  });
+});
+
+describe("parseDhashThreshold", () => {
+  it("白名单值原样返回（含字符串形式）", () => {
+    expect(parseDhashThreshold("4")).toBe(4);
+    expect(parseDhashThreshold("6")).toBe(6);
+    expect(parseDhashThreshold("10")).toBe(10);
+  });
+  it("缺省/畸形/非白名单/重复参数回落默认档", () => {
+    expect(parseDhashThreshold(undefined)).toBe(DHASH_DEFAULT_THRESHOLD);
+    expect(parseDhashThreshold(null)).toBe(DHASH_DEFAULT_THRESHOLD);
+    expect(parseDhashThreshold("8")).toBe(DHASH_DEFAULT_THRESHOLD);
+    expect(parseDhashThreshold("abc")).toBe(DHASH_DEFAULT_THRESHOLD);
+    expect(parseDhashThreshold(["10", "4"])).toBe(10);
+  });
+  it("默认档在白名单内（哨兵：档位表改动须同步默认值）", () => {
+    expect((DHASH_THRESHOLD_PRESETS as readonly number[]).includes(DHASH_DEFAULT_THRESHOLD)).toBe(true);
   });
 });

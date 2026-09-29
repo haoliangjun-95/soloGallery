@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import type { SimilarGroupDTO } from "@/lib/types";
-import { DHASH_SIMILAR_THRESHOLD } from "@/lib/dhash";
 import { ConfirmDialog } from "./ConfirmDialog";
 import ErrorBanner from "./ErrorBanner";
 import { jsonInit, useAdminAction } from "./useAdminAction";
 
 interface Props {
   groups: SimilarGroupDTO[];
+  /** 当前汉明距离档位（页面 ?t= 解析而来，仅展示；分组在服务端完成） */
+  threshold: number;
 }
 
 /**
@@ -16,7 +17,7 @@ interface Props {
  * 删除走既有 /api/admin/photos/batch（桶清理 display/grid 同一汇点），
  * 成功 router.refresh() 回流新分组。每组至少保留一张（删除按钮禁用兜底）。
  */
-export default function SimilarClient({ groups }: Props) {
+export default function SimilarClient({ groups, threshold }: Props) {
   const { busy, error, setError, run } = useAdminAction();
   const [pendingDelete, setPendingDelete] = useState<{ ids: number[]; keeperId: number } | null>(null);
 
@@ -27,7 +28,7 @@ export default function SimilarClient({ groups }: Props) {
       <ErrorBanner error={error} onClose={() => setError(null)} className="mb-4" />
       <p className="mb-4 text-sm text-muted">
         共 <span className="text-foreground font-medium">{groups.length}</span> 组 · {totalMembers} 张照片参与 ·
-        判定：64 位 dHash 汉明距离 ≤ {DHASH_SIMILAR_THRESHOLD}（同簇传递闭合，连拍序列会聚成一组）
+        判定：64 位 dHash 汉明距离 ≤ {threshold}（同簇传递闭合，连拍序列会聚成一组）
       </p>
 
       {groups.length === 0 ? (

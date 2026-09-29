@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "../db";
 import { displayKey, originalKey } from "../bucket-layout";
 import { publicUrl } from "../config";
-import { groupSimilar } from "../dhash";
+import { DHASH_DEFAULT_THRESHOLD, groupSimilar } from "../dhash";
 import type { CommentAdminDTO, SimilarGroupDTO } from "../types";
 
 /** 未读评论数（待审/已通过且从未被后台查看过；垃圾拦截的不计）。 */
@@ -62,7 +62,7 @@ export async function countDhashCoverage(): Promise<{ total: number; hashed: num
  * 毫秒级；万张量级再考虑按哈希前缀分桶预筛。missing 行不参与（清理对象是
  * 活着的近似图）。
  */
-export async function listSimilarGroups(): Promise<SimilarGroupDTO[]> {
+export async function listSimilarGroups(threshold: number = DHASH_DEFAULT_THRESHOLD): Promise<SimilarGroupDTO[]> {
   const rows = await prisma.photo.findMany({
     where: { dhash: { not: null }, missing: false },
     select: {
@@ -89,6 +89,7 @@ export async function listSimilarGroups(): Promise<SimilarGroupDTO[]> {
       height: r.height,
       fileSize: Number(r.fileSize),
     })),
+    threshold,
   ).map((g) => ({
     keeperId: g.keeperId,
     members: g.members.map((m) => {

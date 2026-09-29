@@ -8,9 +8,21 @@
 export const DHASH_BITS = 64;
 export const DHASH_HEX_LENGTH = 16;
 
-/** 近重复判定的汉明距离阈值：64 bit dHash 的经验值——同源重编码/连拍 ≤ 10，
- *  视觉相似但不同构图通常 > 14；取 10 偏保守（宁可漏判不误删） */
-export const DHASH_SIMILAR_THRESHOLD = 10;
+/**
+ * 相似判定的汉明距离档位（相似页 ?t= 白名单）。833 张实测校准：同图重存/压缩
+ * 变体 ≤4；紧凑连拍 ≤6；宽松到 10 连壁纸类抽象图（dHash 空间稠密）都会链成
+ * 巨型簇——传递闭合把结构相近的壁纸越滚越大，组大到失去清理价值。
+ */
+export const DHASH_THRESHOLD_PRESETS = [4, 6, 10] as const;
+export type DhashThreshold = (typeof DHASH_THRESHOLD_PRESETS)[number];
+export const DHASH_DEFAULT_THRESHOLD: DhashThreshold = 6;
+
+/** 相似页阈值参数解析：白名单外的值（含缺省/畸形）一律回落标准档 */
+export function parseDhashThreshold(raw: string | string[] | undefined | null): DhashThreshold {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const n = Number(value);
+  return (DHASH_THRESHOLD_PRESETS as readonly number[]).includes(n) ? (n as DhashThreshold) : DHASH_DEFAULT_THRESHOLD;
+}
 
 const DHASH_HEX_RE = new RegExp(`^[0-9a-f]{${DHASH_HEX_LENGTH}}$`);
 
@@ -76,7 +88,7 @@ export interface SimilarGroup<T> {
  */
 export function groupSimilar<T extends SimilarEntry>(
   entries: T[],
-  threshold: number = DHASH_SIMILAR_THRESHOLD,
+  threshold: number = DHASH_DEFAULT_THRESHOLD,
 ): SimilarGroup<T>[] {
   const valid = entries.filter((e) => isValidDhash(e.dhash));
   const parent = valid.map((_, i) => i);
