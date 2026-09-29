@@ -57,6 +57,16 @@ export default function PhotoGrid({ initialItems, total, pageSize, view = "norma
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(initialItems.length >= total);
+
+  // 面包屑：记录最近一次列表页地址（含筛选参数），详情页「关闭预览」据此精确回到
+  // 来源列表。sessionStorage 按标签隔离——直开详情的新标签无记录，退回首页
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("sg:lastList", window.location.href);
+    } catch {
+      /* 隐私模式等存储禁用时静默，关闭按钮退化为回首页 */
+    }
+  }, []);
   /** 翻页加载失败：哨兵位置不变时 IO 不会重新触发，静默 catch 会卡死——置 error 态给显式重试入口 */
   const [error, setError] = useState(false);
   /** error 的 ref 镜像：IO 回调据此屏蔽错误态自动重发。若只靠 state，失败后 loading 翻转
