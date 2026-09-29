@@ -8,8 +8,14 @@ cd "$(dirname "$0")/.."
 
 BRANCH="${1:-main}"
 echo "=== [1/6] 拉取代码（${BRANCH}）==="
-git fetch origin "${BRANCH}"
-git merge --ff-only "origin/${BRANCH}"
+# GitHub 直连不稳定是国内服务器的常态：fetch 失败时回退到本地分支状态
+# （代码常经 ssh 中继先到达服务器），不阻断部署
+if git fetch origin "${BRANCH}" 2>/dev/null; then
+  git merge --ff-only "origin/${BRANCH}" || { echo "✗ 无法快进到 origin/${BRANCH}"; exit 1; }
+else
+  echo "⚠ fetch origin 失败（GitHub 不可达），沿用本地 ${BRANCH}"
+  git merge --ff-only "${BRANCH}" || { echo "✗ 本地 ${BRANCH} 无法快进"; exit 1; }
+fi
 git log --oneline -1 | head -c 60; echo
 
 echo "=== [2/6] 安装依赖 ==="
