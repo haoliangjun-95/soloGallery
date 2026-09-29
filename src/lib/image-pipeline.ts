@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import { sniffImage } from "./sniff";
+import { DHASH_BITS, isValidDhash } from "./dhash";
 import { DISPLAY_QUALITY, DISPLAY_WIDTH, GRID_QUALITY, GRID_WIDTHS } from "./bucket-layout";
 
 export interface DisplayResult {
@@ -85,4 +86,38 @@ export async function generateGridVariants(displayWebp: Buffer): Promise<GridVar
         .toBuffer(),
     })),
   );
+}
+
+/**
+ * dHash 感知哈希（功能 15）：9×8 灰度 → 行内相邻像素比较 → 64 bit 小写十六进制。
+ * 刻意从 display WebP 计算：display 已 EXIF 转正、HEIC 已解码（调用方都持有它），
+ * 且 dHash 对缩放/重压缩本就鲁棒——从原图与从 display 计算结果一致。
+ * 语义是"近重复指纹"而非内容校验（那是 sha1 的职责）。
+ */
+export async function computeDhash(displayWebp: Buffer): Promise<string> {
+  const size = DHASH_BITS / 8; // 8 行
+  const stride = size + 1; // 9 列：每行 8 次相邻比较
+  const { data } = await sharp(displayWebp, { failOn: "none" })
+    .resize(stride, size, { fit: "fill" })
+    .grayscale()
+    // grayscale() 对带 alpha 的图仍保留 alpha 通道（raw 输出 2 通道交错），
+    // 强制 b-w 色彩空间保证单通道字节流，索引才成立
+    .toColourspace("b-w")
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  if (data.length < stride * size) throw new Error(`dHash 像素不足：${data.length} bytes`);
+
+  let hash = BigInt(0);
+  const one = BigInt(1);
+  let bit = 0;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // 左 > 右置位；fit:"fill" 已保证 (stride × size) 网格
+      if (data[y * stride + x] > data[y * stride + x + 1]) hash |= one << BigInt(bit);
+      bit++;
+    }
+  }
+  const hex = hash.toString(16).padStart(DHASH_BITS / 4, "0");
+  if (!isValidDhash(hex)) throw new Error(`dHash 输出非法：${hex}`);
+  return hex;
 }

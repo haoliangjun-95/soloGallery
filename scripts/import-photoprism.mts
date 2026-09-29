@@ -18,7 +18,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "../src/lib/db";
 import { extractExif } from "../src/lib/exif";
-import { generateDisplay } from "../src/lib/image-pipeline";
+import { computeDhash, generateDisplay } from "../src/lib/image-pipeline";
 import { putBuffer, exists } from "../src/lib/s3";
 import { sniffImage } from "../src/lib/sniff";
 
@@ -96,11 +96,18 @@ async function importOne(file: string): Promise<void> {
   const exif = await extractExif(buf);
   let width: number | undefined;
   let height: number | undefined;
+  let dhash: string | null = null;
   try {
     const display = await generateDisplay(buf);
     width = display.width;
     height = display.height;
     await putBuffer(`display/${sha1}.webp`, display.webp, "image/webp");
+    // 功能 15：感知哈希 best-effort（backfill-dhash.mts 可对历史行重跑补齐）
+    try {
+      dhash = await computeDhash(display.webp);
+    } catch (err) {
+      console.warn(`  dHash 计算失败 ${rel}:`, err instanceof Error ? err.message : err);
+    }
   } catch (err) {
     console.warn(`  display 生成失败 ${rel}:`, err instanceof Error ? err.message : err);
   }
@@ -116,6 +123,7 @@ async function importOne(file: string): Promise<void> {
       fileSize: BigInt(buf.length),
       width,
       height,
+      dhash,
       shotAt: exif?.shotAt ? new Date(exif.shotAt) : null,
       exif: exif ? (exif as unknown as object) : undefined,
       source: "UPLOAD",

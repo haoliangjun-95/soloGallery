@@ -8,7 +8,8 @@ import sharp from "sharp";
 import { buildItems, phase1Manifests } from "./fixtures.mjs";
 import { sniffImage } from "../src/lib/sniff";
 import { extractExif } from "../src/lib/exif";
-import { generateDisplay, generateGridVariants } from "../src/lib/image-pipeline";
+import { generateDisplay, generateGridVariants, computeDhash } from "../src/lib/image-pipeline";
+import { DHASH_SIMILAR_THRESHOLD, hammingDistance, isValidDhash } from "../src/lib/dhash";
 import { mergeManifests, parseManifest } from "../src/lib/manifest";
 
 let failures = 0;
@@ -49,6 +50,29 @@ const g1 = await sharp(grid[1].webp).metadata();
 assert(g0.width === 400 && g0.height === 600 && g0.format === "webp", `400w 档实际尺寸/格式（${g0.width}x${g0.height}/${g0.format}）`);
 assert(g1.width === 800 && g1.height === 1200 && g1.format === "webp", `800w 档实际尺寸/格式（${g1.width}x${g1.height}/${g1.format}）`);
 assert(grid[0].webp.length < disp.webp.length && grid[1].webp.length < disp.webp.length, "变体字节数小于 display（缩小有效）");
+
+// 功能 15：感知哈希——同图异缩放距离近（≤ 阈值），镜像差异大（> 阈值）
+const dhDisplay = await computeDhash(disp.webp);
+const dhSmall = await computeDhash(grid[0].webp);
+const dhFlop = await computeDhash(await sharp(items[1].jpeg).flop().webp().toBuffer());
+assert(isValidDhash(dhDisplay), `dHash 输出定长小写十六进制（实际 ${dhDisplay}）`);
+assert(
+  hammingDistance(dhDisplay, dhSmall) <= DHASH_SIMILAR_THRESHOLD,
+  `同图 400w 缩放哈希距离 ≤ ${DHASH_SIMILAR_THRESHOLD}（实际 ${hammingDistance(dhDisplay, dhSmall)}）`,
+);
+assert(
+  hammingDistance(dhDisplay, dhFlop) > DHASH_SIMILAR_THRESHOLD,
+  `镜像图哈希距离 > ${DHASH_SIMILAR_THRESHOLD}（实际 ${hammingDistance(dhDisplay, dhFlop)}）`,
+);
+// 带 alpha 的图：raw 灰度若保留 alpha 通道（2 通道交错）索引会错位——
+// toColourspace("b-w") 锁单通道，这里只验证不抛错且格式合法
+const rgba = await sharp({
+  create: { width: 200, height: 200, channels: 4, background: { r: 255, g: 120, b: 0, alpha: 0.5 } },
+})
+  .png()
+  .toBuffer();
+const rgbaDisplay = await generateDisplay(rgba);
+assert(isValidDhash(await computeDhash(rgbaDisplay.webp)), "带 alpha 通道图 dHash 正常");
 
 const snapshots = phase1Manifests(items).map((m) => ({
   deviceId: m.device,

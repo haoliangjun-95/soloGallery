@@ -71,6 +71,10 @@ model Photo {
   // 确定性派生（同 displayKey），标志只表存在性；老照片为 false，前台条件
   // 省略 srcset 退回 src（浏览器选定 srcset 候选后失败不回落，必须条件输出）
   gridReady   Boolean     @default(false)
+  // 功能 15：dHash 感知哈希（64bit 十六进制定长）。从 display WebP 计算、
+  // 入库时 best-effort 写入（生成 display 失败则为 null）；后台相似照片页
+  // 按汉明距离 ≤ 阈值分组，辅助清理连拍/压缩重存的近似图
+  dhash       String?     @db.Char(16)
   categoryId  Int?
   category    Category?   @relation("PhotoCategory", fields: [categoryId], references: [id], onDelete: SetNull)
   coverOf     Category?   @relation("CategoryCover")

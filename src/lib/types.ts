@@ -80,3 +80,23 @@ export interface AdminPhotoDTO extends Omit<PhotoCardDTO, "category"> {
   source: "SYNC" | "UPLOAD";
   category: string | null;
 }
+
+/** 相似照片组成员（功能 15）：dHash 分组卡片所需的最小字段集 */
+export interface SimilarPhotoDTO {
+  id: number;
+  sha1: string;
+  title: string;
+  thumbUrl: string;
+  width: number | null;
+  height: number | null;
+  fileSize: number;
+  favorite: boolean;
+  published: boolean;
+  shotAt: string | null;
+}
+
+export interface SimilarGroupDTO {
+  /** 推荐保留者排首位，其余按 id 升序 */
+  members: SimilarPhotoDTO[];
+  keeperId: number;
+}

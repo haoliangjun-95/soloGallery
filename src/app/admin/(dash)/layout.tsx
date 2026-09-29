@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const NAV = [
   { href: "/admin/photos", label: "图片" },
+  { href: "/admin/similar", label: "相似" },
   { href: "/admin/upload", label: "上传" },
   { href: "/admin/categories", label: "分类" },
   { href: "/admin/tags", label: "标签" },

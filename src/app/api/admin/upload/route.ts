@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { extractExif } from "@/lib/exif";
 import type { GeoPoint, NormalizedExif } from "@/lib/exif";
 import { reverseGeocode } from "@/lib/geo";
-import { generateDisplay, generateGridVariants, type GridVariant } from "@/lib/image-pipeline";
+import { computeDhash, generateDisplay, generateGridVariants, type GridVariant } from "@/lib/image-pipeline";
 import { createLogger } from "@/lib/logger";
 import { putBuffer } from "@/lib/s3";
 import { sniffImage } from "@/lib/sniff";
@@ -110,6 +110,16 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // 功能 15：感知哈希 best-effort——失败只少一个相似检测维度，不拦入库
+      let dhash: string | null = null;
+      if (webp) {
+        try {
+          dhash = await computeDhash(webp);
+        } catch (err) {
+          logger.warn(`dHash 计算失败 ${file.name}`, err);
+        }
+      }
+
       // 与壁纸软件的内容寻址约定一致：原图原样存 objects/<sha1>
       await putBuffer(originalKey(sha1), buf, sniff.mimeType);
       if (webp) await putBuffer(displayKey(sha1), webp, "image/webp");
@@ -139,6 +149,7 @@ export async function POST(request: NextRequest) {
           width: width ?? null,
           height: height ?? null,
           gridReady,
+          dhash,
           published: false,
           shotAt: exif?.shotAt ? new Date(exif.shotAt) : null,
           exif: exif ? (exif as unknown as object) : undefined,

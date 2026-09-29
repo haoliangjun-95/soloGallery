@@ -2,7 +2,7 @@ import { BUCKET_LAYOUT, displayKey, originalKey } from "./bucket-layout";
 import { prisma } from "./db";
 import { extractExif } from "./exif";
 import { reverseGeocode } from "./geo";
-import { generateDisplay } from "./image-pipeline";
+import { computeDhash, generateDisplay } from "./image-pipeline";
 import { createLogger } from "./logger";
 import { mergeManifests, parseManifest, type ManifestSnapshot, type MergedItem } from "./manifest";
 import { exists, getBuffer, listKeys, putBuffer } from "./s3";
@@ -179,6 +179,16 @@ async function importPhoto(
   const dKey = displayKey(hash);
   if (webp) await putBuffer(dKey, webp, "image/webp");
 
+  // 功能 15：感知哈希 best-effort（display 已有，开销是 9×8 缩放，毫秒级）
+  let dhash: string | null = null;
+  if (webp) {
+    try {
+      dhash = await computeDhash(webp);
+    } catch (err) {
+      logger.warn(`dHash 计算失败 ${hash}`, err);
+    }
+  }
+
   let thumbKey: string | undefined;
   if (item.wallpaperId) thumbKey = thumbs.byId.get(item.wallpaperId);
   if (!thumbKey) {
@@ -202,6 +212,7 @@ async function importPhoto(
       fileSize: BigInt(buf.length),
       width: width ?? null,
       height: height ?? null,
+      dhash,
       thumbKey: thumbKey ?? null,
       categoryId,
       favorite: item.favorite,
