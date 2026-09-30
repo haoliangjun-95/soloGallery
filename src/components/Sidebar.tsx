@@ -4,6 +4,7 @@ import type { GearLists } from "@/lib/gear";
 import { getSettings } from "@/lib/settings";
 import type { CategoryDTO, TagDTO } from "@/lib/types";
 import RandomWalkLink from "@/components/RandomWalkLink";
+import SidebarMenus, { type MenuGroup } from "@/components/SidebarMenus";
 
 export interface SidebarFilters {
   category?: string;
@@ -87,24 +88,6 @@ function IconShuffle() {
   );
 }
 
-function IconCamera() {
-  return (
-    <svg className={ICON} viewBox="0 0 24 24" {...STROKE} aria-hidden>
-      <path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
-      <circle cx="12" cy="13" r="3.5" />
-    </svg>
-  );
-}
-
-function IconAperture() {
-  return (
-    <svg className={ICON} viewBox="0 0 24 24" {...STROKE} aria-hidden>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 3v7.5M20.8 16.5l-6.5-3.7M3.2 16.5l6.5-3.7" />
-    </svg>
-  );
-}
-
 /**
  * 左侧栏：磨砂深色面板，顶部头像+画廊名，核心入口卡片，
  * 下方 分类/年份/标签/器材 分组。选中态 = 柔和高亮 + 浅金左侧指示条。
@@ -168,67 +151,88 @@ export default async function Sidebar({ categories, tags, years, gear, totalAll,
           </RandomWalkLink>
         </div>
 
-        {categories.length > 0 ? (
-          <Group title="分类">
-            {categories.map((c) => (
-              <Item key={c.id} href={href({ category: c.slug })} active={sp.category === c.slug} label={c.name} count={c.count} />
-            ))}
-          </Group>
-        ) : null}
-
-        {years.length > 0 ? (
-          <Group title="年份">
-            {years.map((y) => (
-              <Item key={y.year} href={href({ year: String(y.year) })} active={sp.year === String(y.year)} label={`${y.year} 年`} count={y.count} />
-            ))}
-          </Group>
-        ) : null}
-
-        {tags.length > 0 ? (
-          <Group title="标签">
-            {tags.map((t) => (
-              <Item key={t.id} href={href({ tag: t.name })} active={sp.tag === t.name} label={`#${t.name}`} count={t.count} />
-            ))}
-          </Group>
-        ) : null}
-
-        {gear.cameras.length + gear.lenses.length > 0 ? (
-          <Group title="器材">
-            {gear.cameras.map((c) => (
-              <Item
-                key={`cam-${c.make ?? ""}|${c.model ?? ""}`}
-                // 相机 = make+model 双参数定位（组合展示名不可靠反拆）；clear 语义自动清掉 lens 等其余维度
-                href={href({ make: c.make, model: c.model })}
-                active={sp.make === c.make && sp.model === c.model}
-                label={c.label}
-                count={c.count}
-                icon={<IconCamera />}
-              />
-            ))}
-            {gear.lenses.map((l) => (
-              <Item
-                key={`lens-${l.lens}`}
-                href={href({ lens: l.lens })}
-                active={sp.lens === l.lens}
-                label={l.lens}
-                count={l.count}
-                icon={<IconAperture />}
-              />
-            ))}
-          </Group>
-        ) : null}
+        {/* 筛选菜单（分类/年份/标签/器材）：客户端组件——快筛输入框 + 分组折叠 */}
+        <SidebarMenus groups={menuGroups(categories, tags, years, gear, href, sp)} />
       </aside>
     </nav>
   );
 }
 
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mt-8">
-      <h3 className="mb-2.5 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/50">{title}</h3>
-      <div className="space-y-0.5">{children}</div>
-    </div>
-  );
+/** 四组筛选菜单的条目预计算：href/激活态在服务端定死（URL 语义单一出处），客户端只管视图。 */
+function menuGroups(
+  categories: CategoryDTO[],
+  tags: TagDTO[],
+  years: { year: number; count: number }[],
+  gear: GearLists,
+  href: (patch: FilterPatch) => string,
+  sp: SidebarFilters,
+): MenuGroup[] {
+  const groups: MenuGroup[] = [];
+  if (categories.length > 0) {
+    groups.push({
+      key: "category",
+      title: "分类",
+      entries: categories.map((c) => ({
+        key: String(c.id),
+        label: c.name,
+        count: c.count,
+        href: href({ category: c.slug }),
+        active: sp.category === c.slug,
+      })),
+    });
+  }
+  if (years.length > 0) {
+    groups.push({
+      key: "year",
+      title: "年份",
+      entries: years.map((y) => ({
+        key: String(y.year),
+        label: `${y.year} 年`,
+        count: y.count,
+        href: href({ year: String(y.year) }),
+        active: sp.year === String(y.year),
+      })),
+    });
+  }
+  if (tags.length > 0) {
+    groups.push({
+      key: "tag",
+      title: "标签",
+      entries: tags.map((t) => ({
+        key: String(t.id),
+        label: `#${t.name}`,
+        count: t.count,
+        href: href({ tag: t.name }),
+        active: sp.tag === t.name,
+      })),
+    });
+  }
+  if (gear.cameras.length + gear.lenses.length > 0) {
+    groups.push({
+      key: "gear",
+      title: "器材",
+      entries: [
+        ...gear.cameras.map((c) => ({
+          key: `cam-${c.make ?? ""}|${c.model ?? ""}`,
+          // 相机 = make+model 双参数定位（组合展示名不可靠反拆）；clear 语义自动清掉 lens 等其余维度
+          href: href({ make: c.make, model: c.model }),
+          active: sp.make === c.make && sp.model === c.model,
+          label: c.label,
+          count: c.count,
+          icon: "camera" as const,
+        })),
+        ...gear.lenses.map((l) => ({
+          key: `lens-${l.lens}`,
+          href: href({ lens: l.lens }),
+          active: sp.lens === l.lens,
+          label: l.lens,
+          count: l.count,
+          icon: "aperture" as const,
+        })),
+      ],
+    });
+  }
+  return groups;
 }
 
 function Item({

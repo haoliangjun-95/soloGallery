@@ -132,3 +132,19 @@ html {
 .leaflet-container .leaflet-control-attribution.leaflet-control a {
   color: var(--muted);
 }
+
+/* 侧栏分组展开/收起动画：grid-template-rows 0fr↔1fr 过渡（内容未知高度也能
+   平滑收合）；内层 overflow:hidden + min-height:0 是 grid 行过渡生效的前提。
+   上方 prefers-reduced-motion 全局块压 transition-duration 自动降级 */
+.menu-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.2s ease-out;
+}
+.menu-collapse[data-collapsed="true"] {
+  grid-template-rows: 0fr;
+}
+.menu-collapse > * {
+  overflow: hidden;
+  min-height: 0;
+}
