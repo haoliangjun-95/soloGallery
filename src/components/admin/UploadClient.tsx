@@ -33,6 +33,22 @@ interface QueueItem {
 
 const MAX_FILE_MB = MAX_FILE_BYTES / 1024 / 1024;
 const OVERSIZED_MESSAGE = `超过 ${MAX_FILE_MB}MB 上限，未上传`;
+/** 并发上传数：服务端 route 逐请求串行处理文件，3 路并行各占一请求；
+ *  内存峰值 3×30MB 级，带宽为上链瓶颈时并行收益最大（技术债：原实现串行，
+ *  批量总耗时=各文件之和） */
+const UPLOAD_CONCURRENCY = 3;
+
+/** 固定并发池消费快照目标（脚本 runPool 同款）：worker 抢游标，完成一个接一个 */
+async function runPool<T>(targets: T[], worker: (item: T) => Promise<void>): Promise<void> {
+  let cursor = 0;
+  const lanes = Array.from({ length: Math.min(UPLOAD_CONCURRENCY, targets.length) }, async () => {
+    while (cursor < targets.length) {
+      const item = targets[cursor++];
+      await worker(item);
+    }
+  });
+  await Promise.all(lanes);
+}
 
 export default function UploadClient() {
   const router = useRouter();
@@ -149,9 +165,7 @@ export default function UploadClient() {
     if (!targets.length) return;
     setRunning(true);
     try {
-      for (const item of targets) {
-        await uploadOne(item);
-      }
+      await runPool(targets, uploadOne);
     } finally {
       setRunning(false);
       router.refresh();
@@ -164,6 +178,20 @@ export default function UploadClient() {
     setRunning(true);
     try {
       await uploadOne(item);
+    } finally {
+      setRunning(false);
+      router.refresh();
+    }
+  }
+
+  /** 全部失败项一键重试（技术债：原只能逐个点）；超限死项排除（重试必然同错） */
+  async function retryAll() {
+    if (running) return;
+    const targets = queue.filter((q) => q.status === "error" && !q.oversized);
+    if (!targets.length) return;
+    setRunning(true);
+    try {
+      await runPool(targets, uploadOne);
     } finally {
       setRunning(false);
       router.refresh();
@@ -233,6 +261,16 @@ export default function UploadClient() {
             >
               清除已完成
             </button>
+            {queue.some((q) => q.status === "error" && !q.oversized) ? (
+              <button
+                type="button"
+                onClick={() => void retryAll()}
+                disabled={running}
+                className="rounded-lg border border-edge px-4 py-2 text-sm text-muted hover:text-foreground disabled:opacity-40"
+              >
+                重试失败（{queue.filter((q) => q.status === "error" && !q.oversized).length}）
+              </button>
+            ) : null}
             {summary.settled && !running ? (
               <p role="status" className="text-xs text-muted">
                 {[

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 export type ViewMode = "normal" | "square" | "fixed" | "masonry" | "list";
@@ -75,6 +75,7 @@ const MODES: { key: ViewMode; title: string; hideOnMobile?: boolean; icon: React
 
 export default function ViewToggle() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const rawView = searchParams.get("view");
   const current = (MODES.find((m) => m.key === rawView) ?? MODES[0]).key;
@@ -94,6 +95,9 @@ export default function ViewToggle() {
 
   // 日历（月份文件夹）视图由侧栏「日历」进入，不支持切换视图，隐藏工具栏
   if (rawView === "calendar") return null;
+  // 视图切换只对照片列表页有意义（replace 到 /?view= 会静默离开 /map、/archive、
+  // /stats 等独立路由）——非首页直接不渲染（技术债 0830394 评审 L-6）
+  if (pathname !== "/") return null;
 
   return (
     <div

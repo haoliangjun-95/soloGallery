@@ -47,3 +47,14 @@ export function prevIndex(index: number, length: number): number {
   if (length <= 0) return 0;
   return (normalize(index, length) - 1 + length) % length;
 }
+
+/**
+ * 续页追加（幻灯片翻页）：按 sha1 去重后拼到尾部——深链兜底前置的当前照片
+ * 在后续页重现时靠它去重（buildPlaylist 的 [current, ...page1] 形态）。
+ * 无新元素返回原引用（setState 同引用 bail-out，不触发重渲染与计数闪烁）。
+ */
+export function appendPage(playlist: SlideshowPhoto[], items: readonly SlideshowPhoto[]): SlideshowPhoto[] {
+  const seen = new Set(playlist.map((p) => p.sha1));
+  const fresh = items.filter((p) => !seen.has(p.sha1));
+  return fresh.length ? [...playlist, ...fresh] : playlist;
+}

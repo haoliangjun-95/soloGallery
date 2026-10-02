@@ -3,8 +3,9 @@
 /**
  * 幻灯片放映入口 + 全屏放映器（功能 4）：详情页「▶ 幻灯片」胶囊按钮。
  * - 播放列表：点开时取当前筛选上下文第一页（/api/photos，contextToParams 与
- *   PhotoGrid.loadMore 同源），buildPlaylist 从当前照片截到页尾；播到末尾
- *   nextIndex 回卷循环（slideshow.ts 纯函数，vitest 直测）
+ *   PhotoGrid.loadMore 同源），buildPlaylist 从当前照片截到页尾；播到倒数第
+ *   2 张起后台续页（appendPage 去重追加，空页终止），全部播完 nextIndex 回卷
+ *   循环（slideshow.ts 纯函数，vitest 直测）
  * - 过渡只动 opacity（globals.css .slideshow-fade；全局 prefers-reduced-motion
  *   块会把 animation-duration 压到 0.01ms，合成器友好，不碰布局属性）
  * - prefers-reduced-motion 用户打开时默认暂停（自动轮播即动效；WCAG 2.2.2
@@ -22,6 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { contextToParams, type PhotoContext } from "@/lib/filter-url";
 import {
   SLIDE_INTERVAL_MS,
+  appendPage,
   buildPlaylist,
   nextIndex,
   prevIndex,
@@ -42,6 +44,8 @@ interface Props {
  *  isPlaylistItem 逐字段校验后才进入播放列表 */
 interface PlaylistResponse {
   items?: unknown;
+  /** 上下文总数（listPhotos 返回）：续页预取的终止条件；缺省/非数字视为不可续页 */
+  total?: unknown;
 }
 
 /** 元素级运行时校验（信任边界防御）：三字段都必须是 string，
@@ -59,6 +63,14 @@ export default function SlideshowButton({ initial, context }: Props) {
   const [playlist, setPlaylist] = useState<SlideshowPhoto[]>([]);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
+  /** 上下文总张数（API 返回）：null = 未知/不可续页（老接口形态防御） */
+  const [total, setTotal] = useState<number | null>(null);
+  /** 续页全部拉完（appendPage 全重复/空页/达 total）：不再预取 */
+  const [exhausted, setExhausted] = useState(true);
+  /** 下一页页码（ref：不参与渲染，start() 重置为 2） */
+  const nextPageRef = useRef(2);
+  /** 续页请求中止（关闭/重开时掐断在途页） */
+  const pageAbortRef = useRef<AbortController | null>(null);
   /** 中止上一发列表请求：关闭、重开、重试都先 abort，旧响应不会覆盖新状态 */
   const abortRef = useRef<AbortController | null>(null);
   /** 打开时把焦点迁入对话框（M-2b）：焦点若留在被覆盖的入口按钮上，Enter 会
@@ -69,11 +81,15 @@ export default function SlideshowButton({ initial, context }: Props) {
 
   const start = useCallback(() => {
     abortRef.current?.abort();
+    pageAbortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
     setOpen(true);
     setLoading(true);
     setError(false);
+    setTotal(null);
+    setExhausted(true); // 首 页拿到 total 前不预取
+    nextPageRef.current = 2;
     // 自动轮播即动效：reduced-motion 用户打开时即为暂停（WCAG 2.2.2，播放键/空格
     // 随时可恢复）。判定放在点击处理器而非挂载 effect——setState 同步进 effect 会
     // 级联渲染（react-hooks/set-state-in-effect），且首帧 playing=true 会空转一次
@@ -89,6 +105,10 @@ export default function SlideshowButton({ initial, context }: Props) {
         const items = Array.isArray(data.items) ? data.items.filter(isPlaylistItem).map(toSlideshowPhoto) : [];
         setPlaylist(buildPlaylist(initial, items));
         setIndex(0);
+        if (typeof data.total === "number" && data.total > items.length) {
+          setTotal(data.total);
+          setExhausted(false);
+        }
       } catch {
         if (ac.signal.aborted) return; // 主动中止（关闭/重试）不是失败
         setError(true);
@@ -102,6 +122,7 @@ export default function SlideshowButton({ initial, context }: Props) {
 
   const close = useCallback(() => {
     abortRef.current?.abort();
+    pageAbortRef.current?.abort();
     setOpen(false);
     triggerRef.current?.focus();
   }, []);
@@ -110,7 +131,43 @@ export default function SlideshowButton({ initial, context }: Props) {
   const goPrev = useCallback(() => setIndex((i) => prevIndex(i, playlist.length)), [playlist.length]);
 
   // 组件卸载兜底中止（快速导航离开详情页时不留悬挂请求）
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    pageAbortRef.current?.abort();
+  }, []);
+
+  // 续页预取（幻灯片翻页）：播到倒数第 2 张（8s 窗口）且上下文还有更多 →
+  // 后台拉下一页 appendPage 去重追加。新页就位前 nextIndex 照常回卷——放映
+  // 不被打断，续页失败也静默（与首屏加载的显式错误态不同：这里只是"少播"）。
+  // 空页/全重复/达 total 置 exhausted 终止预取（深链前置照片去重会让 loaded
+  // 恒小于 total，靠空页兜底收尾）
+  useEffect(() => {
+    if (!open || loading || error || exhausted) return;
+    if (index < playlist.length - 2) return;
+    if (pageAbortRef.current) return; // 已有一发在途
+    const ac = new AbortController();
+    pageAbortRef.current = ac;
+    const page = nextPageRef.current;
+    void (async () => {
+      try {
+        const params = contextToParams(context);
+        params.set("page", String(page));
+        const res = await fetch(`/api/photos?${params.toString()}`, { signal: ac.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as PlaylistResponse;
+        const items = Array.isArray(data.items) ? data.items.filter(isPlaylistItem).map(toSlideshowPhoto) : [];
+        setPlaylist((prev) => appendPage(prev, items));
+        nextPageRef.current = page + 1;
+        // 空页 = 越过末页（appendPage 返回原引用零重渲染）；不用"达 total"判断——
+        // 深链前置照片被去重会让 loaded 恒小于 total，空页是唯一必达的终止条件
+        if (items.length === 0) setExhausted(true);
+      } catch {
+        if (!ac.signal.aborted) setExhausted(true); // 网络失败不无限重试，本轮回卷收场
+      } finally {
+        pageAbortRef.current = null;
+      }
+    })();
+  }, [open, loading, error, exhausted, index, playlist.length, total, context]);
 
   // 自动切换：index 在依赖中 → 每张重置计时；手动切换/暂停/单张列表都自然停表。
   // error 门控：重开失败时 playlist 仍是旧列表，不拦会隐形轮播 + 预取无人看的变体
@@ -199,7 +256,7 @@ export default function SlideshowButton({ initial, context }: Props) {
               {/* loading/error 门控：重开加载或失败期间 playlist 仍是旧列表，不展示过期计数/标题。
                   aria-live 仅手动浏览（暂停）时播报序号——自动轮播下每 4s 播报一次是读屏噪音 */}
               <span aria-live={playing ? "off" : "polite"}>
-                {!loading && !error && current ? `${index + 1} / ${playlist.length}` : "幻灯片"}
+                {!loading && !error && current ? `${index + 1} / ${exhausted ? playlist.length : (total ?? playlist.length)}` : "幻灯片"}
               </span>
               {!loading && !error && current ? <span className="ml-3 text-white/55">{current.title}</span> : null}
             </p>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SLIDE_INTERVAL_MS,
+  appendPage,
   buildPlaylist,
   nextIndex,
   prevIndex,
@@ -129,5 +130,24 @@ describe("nextIndex / prevIndex", () => {
 describe("SLIDE_INTERVAL_MS", () => {
   it("自动切换间隔为 4 秒（经典画廊节奏，锁常量防误改）", () => {
     expect(SLIDE_INTERVAL_MS).toBe(4000);
+  });
+});
+
+describe("appendPage", () => {
+  it("新元素按序拼到尾部，不修改入参", () => {
+    const base = [photo("a"), photo("b")];
+    const out = appendPage(base, [photo("c"), photo("d")]);
+    expect(out.map((p) => p.sha1)).toEqual(["a", "b", "c", "d"]);
+    expect(base).toHaveLength(2);
+  });
+  it("与已有 sha1 重复的元素被去重（深链前置照片在后续页重现）", () => {
+    const base = [photo("a"), photo("b")];
+    const out = appendPage(base, [photo("b"), photo("c")]);
+    expect(out.map((p) => p.sha1)).toEqual(["a", "b", "c"]);
+  });
+  it("全部重复/空页返回原引用（setState bail-out，不触发重渲染）", () => {
+    const base = [photo("a")];
+    expect(appendPage(base, [photo("a")])).toBe(base);
+    expect(appendPage(base, [])).toBe(base);
   });
 });
