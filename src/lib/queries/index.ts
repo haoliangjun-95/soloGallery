@@ -6,9 +6,11 @@
  * - ./calendar  月份列表/日历分组/年度归档/那年今日
  * - ./map       地图点位（复用 list.canSeeGps 闸门）
  * - ./admin     评论管理/原图存储键
+ * - ./stats     统计页总览聚合
  */
 export * from "./list";
 export * from "./taxonomy";
 export * from "./calendar";
 export * from "./map";
 export * from "./admin";
+export * from "./stats";

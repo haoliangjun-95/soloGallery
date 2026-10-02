@@ -153,12 +153,18 @@ export default async function HomePage({ searchParams }: Props) {
           <FilterLink href="/?view=calendar" active={view === "calendar"}>
             日历
           </FilterLink>
-          {/* 独立路由入口（非筛选参数）：地图 / 最新年份归档，与随机漫游同款 chip 样式 */}
+          {/* 独立路由入口（非筛选参数）：地图 / 统计 / 最新年份归档，与随机漫游同款 chip 样式 */}
           <Link
             href="/map"
             className="inline-flex min-h-11 shrink-0 items-center rounded-full border border-edge px-3 py-1 text-muted transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2"
           >
             地图
+          </Link>
+          <Link
+            href="/stats"
+            className="inline-flex min-h-11 shrink-0 items-center rounded-full border border-edge px-3 py-1 text-muted transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-[#f5b43c] focus-visible:outline-offset-2"
+          >
+            统计
           </Link>
           {years[0] ? (
             <Link
@@ -177,13 +183,22 @@ export default async function HomePage({ searchParams }: Props) {
             随机漫游
           </RandomWalkLink>
           {categories.map((c) => (
-            <FilterLink key={c.id} href={qs({ category: c.slug })} active={category === c.slug}>
+            // 反选：再点已激活 chip 只清该维度（其余筛选保留），不再需要回「全部」丢整组
+            <FilterLink
+              key={c.id}
+              href={qs({ category: category === c.slug ? null : c.slug })}
+              active={category === c.slug}
+            >
               {c.name}
               {c.count > 0 ? <span className="opacity-50 ml-1">{c.count}</span> : null}
             </FilterLink>
           ))}
           {years.map((y) => (
-            <FilterLink key={y.year} href={qs({ year: String(y.year) })} active={yearParam === String(y.year)}>
+            <FilterLink
+              key={y.year}
+              href={qs({ year: yearParam === String(y.year) ? null : String(y.year) })}
+              active={yearParam === String(y.year)}
+            >
               {y.year}
             </FilterLink>
           ))}
@@ -194,7 +209,7 @@ export default async function HomePage({ searchParams }: Props) {
           <div className="-mx-1 mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto p-1 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
             <span className="shrink-0 pl-2 text-xs text-muted">标签</span>
             {tags.map((t) => (
-              <FilterLink key={t.id} href={qs({ tag: t.name })} active={tag === t.name}>
+              <FilterLink key={t.id} href={qs({ tag: tag === t.name ? null : t.name })} active={tag === t.name}>
                 #{t.name}
                 {t.count > 0 ? <span className="opacity-50 ml-1">{t.count}</span> : null}
               </FilterLink>
@@ -206,16 +221,19 @@ export default async function HomePage({ searchParams }: Props) {
         {gear.cameras.length > 0 ? (
           <div className="-mx-1 mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto p-1 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
             <span className="shrink-0 pl-2 text-xs text-muted">器材</span>
-            {gear.cameras.map((c) => (
-              <FilterLink
-                key={c.label}
-                href={qs({ make: c.make ?? null, model: c.model ?? null })}
-                active={Boolean(c.make) && make === c.make && (!c.model || model === c.model)}
-              >
-                {c.label}
-                {c.count > 0 ? <span className="opacity-50 ml-1">{c.count}</span> : null}
-              </FilterLink>
-            ))}
+            {gear.cameras.map((c) => {
+              const camActive = Boolean(c.make) && make === c.make && (!c.model || model === c.model);
+              return (
+                <FilterLink
+                  key={c.label}
+                  href={qs({ make: camActive ? null : (c.make ?? null), model: camActive ? null : (c.model ?? null) })}
+                  active={camActive}
+                >
+                  {c.label}
+                  {c.count > 0 ? <span className="opacity-50 ml-1">{c.count}</span> : null}
+                </FilterLink>
+              );
+            })}
           </div>
         ) : null}
 

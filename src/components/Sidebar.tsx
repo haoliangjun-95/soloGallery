@@ -80,6 +80,14 @@ function IconMap() {
   );
 }
 
+function IconChart() {
+  return (
+    <svg className={ICON} viewBox="0 0 24 24" {...STROKE} aria-hidden>
+      <path d="M4 20V10M10 20V4M16 20v-7M21 20H3" />
+    </svg>
+  );
+}
+
 function IconShuffle() {
   return (
     <svg className={ICON} viewBox="0 0 24 24" {...STROKE} aria-hidden>
@@ -133,6 +141,8 @@ export default async function Sidebar({ categories, tags, years, gear, totalAll,
           <Item href={href({ view: "calendar" })} active={calActive} label="日历" count={totalAll} icon={<IconCalendar />} />
           {/* 地图是独立路由而非过滤参数——Sidebar 仅在首页渲染，/map 页面上无侧栏，active 恒 false；GPS 张数不在侧栏数据源里，省略 count */}
           <Item href="/map" active={false} label="地图" icon={<IconMap />} />
+          {/* 统计同为独立路由（/stats），与地图同款姿态 */}
+          <Item href="/stats" active={false} label="统计" icon={<IconChart />} />
           {/* 随机漫游是客户端按钮（每次点击生成新 nonce），非 Link——外观对齐 Item */}
           <RandomWalkLink
             title="随机挑选 10 张照片"
