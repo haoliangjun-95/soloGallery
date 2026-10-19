@@ -1,0 +1,26 @@
+services:
+  sologallery:
+    build:
+      context: .
+      # 必须显式指定：Dockerfile 里 watcher 阶段排在 runner 之后，
+      # 不写 target 会默认构建最后一阶（画廊容器会跑成 watcher）
+      target: runner
+      args:
+        # 国内网络拉不到官方源时在 .env 设 NODE_IMAGE=镜像加速前缀（见 README）
+        NODE_IMAGE: ${NODE_IMAGE:-node:20-alpine}
+        # CSP 在构建期求值：http 内网的 MinIO 公网地址必须传入，否则 CSP 拦图；
+        # 留空则放行全部 https（公网 https MinIO 可省略）。取值来自同目录 .env
+        MINIO_PUBLIC_BASE_URL: ${MINIO_PUBLIC_BASE_URL:-}
+        MAP_TILE_URL: ${MAP_TILE_URL:-}
+    image: sologallery:latest
+    container_name: sologallery
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    # compose 的 env_file 按 dotenv 规则解析，.env 里的引号会被剥掉；
+    # 注意 docker run --env-file 不去引号，混用会把引号带进 DATABASE_URL
+    env_file:
+      - .env
+    extra_hosts:
+      # Linux 下 MINIO_ENDPOINT 可写 host.docker.internal 指回宿主机
+      - "host.docker.internal:host-gateway"

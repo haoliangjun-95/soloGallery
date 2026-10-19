@@ -108,7 +108,42 @@ EXIF 卡格式（时区 Asia/Shanghai）：
 
 ## 部署
 
-`next build && next start`（pm2/systemd 守护），定时同步随应用进程启动（`src/instrumentation.ts`，`SYNC_ENABLED=false` 可关）。依赖：Node ≥ 20.9、MySQL 8、可达的 MinIO。
+`next build && next start`（pm2/systemd 守护），定时同步随应用进程启动（`src/instrumentation.ts`，`SYNC_ENABLED=false` 可关）。依赖：Node ≥ 20.9、MySQL 8、可达的 MinIO。`next.config.ts` 已开 `output: "standalone"`，对 pm2 流程无影响，仅为 Docker 产出 `.next/standalone`。
+
+### Docker 镜像
+
+多阶段构建（`node:20-alpine`）：deps 装依赖 + `prisma generate` → `next build` → 只带 standalone 产物的运行镜像。**构建期不连任何服务**（页面全部 force-dynamic、Prisma 客户端懒初始化），密钥全部运行时注入，不进镜像层。
+
+```bash
+# 构建（首次较慢，npm ci 全量装依赖）
+docker build -t sologallery:latest .
+
+# 国内网络拉不到官方源时，经镜像加速站拉基础镜像
+docker build --build-arg NODE_IMAGE=docker.m.daocloud.io/library/node:20-alpine -t sologallery:latest .
+
+# Apple Silicon 机器构建部署到 x86 服务器时指定平台
+docker build --platform linux/amd64 -t sologallery:latest .
+
+# 运行
+docker run -d --name sologallery \
+  -p 3000:3000 \
+  --env-file <(sed 's/"//g' .env) \
+  --restart unless-stopped \
+  sologallery:latest
+
+# 或用 compose（推荐：env_file 按 dotenv 规则解析，.env 的引号自动剥掉）
+docker compose up -d
+```
+
+注意事项：
+
+- **CSP 构建期求值**：`next.config.ts` 的 `headers()` 在 build 时生成 CSP，`img-src` 放行的 MinIO origin 来自 `MINIO_PUBLIC_BASE_URL`。若它是 **http 内网地址**（如 `http://192.168.1.10:9000`），构建时必须传 `--build-arg MINIO_PUBLIC_BASE_URL=http://192.168.1.10:9000`（compose 会自动从 `.env` 取值传入），否则 CSP 拦图；https 公网地址走默认回退可省略
+- **容器内的 127.0.0.1 是容器自己**：`.env` 的 `MINIO_ENDPOINT`/`DATABASE_URL` 主机名要改成宿主机内网 IP，或 `host.docker.internal`（macOS/Windows 直通；Linux 需 `--add-host=host.docker.internal:host-gateway`，compose 文件已带）
+- `docker run --env-file` **不去引号**：`.env` 里的 `"mysql://..."` 引号会被当作值的一部分导致解析失败，上面命令用 `sed` 现场剥掉；compose 则无此问题
+- 首次建表/种子（`npm run db:push && npm run db:seed`）在宿主机跑一次即可，运行镜像内不含 scripts/devDependencies
+- nginx 反代之后设 `TRUST_PROXY=true`，评论限流才采信 X-Forwarded-For；且反代须**覆写**而非追加 XFF（宝塔默认 `$proxy_add_x_forwarded_for` 是追加模式，客户端可伪造首跳绕过按 IP 限流，应改为 `$remote_addr`）
+- 反爬/防盗链的 nginx 配置存档在 `deploy/nginx/`（线上由宝塔管理、不在仓库）：AI 爬虫 UA 拦截 + 恶意段 deny + 全站/图片限流 + `/bucket/` 外站 Referer 403，名单与 `src/app/robots.ts` 同步维护，应用/回滚步骤见该目录 README
+- 日志：`docker logs -f sologallery`；定时同步随容器内 Next 进程自动启动
 
 ## 已知边界
 

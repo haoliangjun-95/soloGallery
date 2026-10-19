@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# 本地目录导入的增量缓存（scripts/import-photoprism.mts）
+/.cache
+
 # debug
 npm-debug.log*
 yarn-debug.log*

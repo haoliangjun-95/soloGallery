@@ -1,0 +1,20 @@
+# 与 .gitignore 对齐：依赖与构建产物由镜像内各 stage 自产，绝不从宿主机带入
+node_modules
+.next
+out
+src/generated
+
+# 密钥不进构建上下文（运行时经 env 注入）
+.env*
+!.env.example
+
+# 仓库杂项
+.git
+.idea
+.serena
+.zcode
+.cache
+.DS_Store
+*.tsbuildinfo
+代码审查报告-v1.4.0.md
+待开发功能清单.md

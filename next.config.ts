@@ -52,6 +52,13 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Docker 镜像用 .next/standalone 产物（server.js）自举，产出该目录；
+  // 本地 pm2 的 next start 流程不受影响
+  output: "standalone",
+  // sharp 是原生模块，standalone 文件追踪对平台二进制偶有遗漏，显式全量打包
+  outputFileTracingIncludes: {
+    "/*": ["node_modules/sharp/**/*"],
+  },
   // dev 服务自报 localhost，用 127.0.0.1 访问时会被跨域保护拦截，
   // 导致客户端水合不启动（页面无任何交互）；生产模式不受影响
   allowedDevOrigins: ["127.0.0.1"],

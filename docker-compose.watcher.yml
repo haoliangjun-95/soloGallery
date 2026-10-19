@@ -1,0 +1,46 @@
+# NAS 监听导入容器（独立于画廊栈，不占端口）：宿主 SMB 挂载点只读挂入
+# /nas-src，每 WATCH_INTERVAL_SECONDS 秒增量扫描，写入 env 指向的 MinIO/MySQL。
+# 完整接入步骤（华为家庭存储开共享、Mac 挂载、启动验证）见 docs/nas-import.md。
+#
+# 启动：  docker compose -f docker-compose.watcher.yml up -d --build
+# 日志：  docker compose -f docker-compose.watcher.yml logs -f
+# 预演：  docker compose -f docker-compose.watcher.yml run --rm nas-watcher \
+#           npx tsx scripts/import-photoprism.mts --src /nas-src --dry-run
+#
+# 网络接入二选一：
+# 1) 默认：经 host.docker.internal 访问宿主端口上的 MinIO/MySQL
+#    （.env 里 MINIO_ENDPOINT/DATABASE_URL 主机名写 host.docker.internal）
+# 2) 若 MinIO/MySQL 与画廊在同一 docker 网络：取消最下方 networks 注释并填网络名，
+#    .env 主机名改用服务名。
+services:
+  nas-watcher:
+    build:
+      context: .
+      target: watcher
+      args:
+        # 基础镜像可替换（与主 Dockerfile 一致，.env 里配 NODE_IMAGE 走国内镜像源）
+        NODE_IMAGE: ${NODE_IMAGE:-node:20-alpine}
+    image: sologallery-nas-watcher:latest
+    container_name: sologallery-nas-watcher
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NAS_SRC: /nas-src
+      WATCH_INTERVAL_SECONDS: ${WATCH_INTERVAL_SECONDS:-120}
+      # 连接串直接用 .env 里的 Mac 局域网 IP（对容器与宿主都可达），无需覆盖
+    volumes:
+      # 宿主挂载点（华为家庭存储 网络邻居）→ 容器内固定 /nas-src；
+      # 固定容器路径意味着换宿主挂载点/重建容器都不影响增量缓存的有效性
+      - ${NAS_SRC_HOST:-/Volumes/华为家庭存储}:/nas-src:ro
+      - nas-watch-cache:/app/.cache
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  nas-watch-cache:
+
+# networks:
+#   default:
+#     name: 你的-minio-mysql-所在网络名
+#     external: true
