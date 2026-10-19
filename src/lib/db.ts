@@ -12,6 +12,11 @@ function createAdapter() {
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, ""),
     connectionLimit: 10,
+    // ?ssl=true 启用 TLS（自签证书放行）：MySQL 8 caching_sha2_password 完整认证
+    // 在明文连接上会被拒发 RSA 公钥（ER_CANNOT_RETRIEVE_RSA_KEY），重启后首连必触发
+    ...(u.searchParams.get("ssl") === "true"
+      ? { ssl: { rejectUnauthorized: false } }
+      : {}),
   });
 }
 
