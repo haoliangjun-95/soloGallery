@@ -198,112 +198,199 @@ export async function runImport(opts: ImportOptions): Promise<ImportResult> {
     if (!dryRun && useCache) cache[file] = { size: st.size, mtimeMs: st.mtimeMs, sha1 };
   };
 
-  const importOne = async (file: string, st: FileStatInfo): Promise<void> => {
+  interface Prepared {
+    file: string;
+    rel: string;
+    st: FileStatInfo;
+    buf: Buffer;
+    sniff: ReturnType<typeof sniffImage>;
+    sha1: string;
+  }
+
+  const prepareOne = async (item: { file: string; st: FileStatInfo }): Promise<Prepared | null> => {
     result.scanned++;
-    const rel = path.relative(opts.src, file);
-    const buf = await readFile(file);
+    const rel = path.relative(opts.src, item.file);
+    const buf = await readFile(item.file);
     const sniff = sniffImage(buf);
     if (sniff.format === "UNKNOWN") {
       result.skipUnknown++;
       log(`  跳过（魔数未知）: ${rel}`);
-      remember(file, st, null);
-      return;
+      remember(item.file, item.st, null);
+      return null;
     }
-    const sha1 = createHash("sha1").update(buf).digest("hex");
+    return { file: item.file, rel, st: item.st, buf, sniff, sha1: createHash("sha1").update(buf).digest("hex") };
+  };
 
-    const existing = await prisma.photo.findUnique({ where: { sha1 }, select: { id: true } });
-    if (existing) {
-      result.skipDb++;
-      remember(file, st, sha1);
-      return;
-    }
-
-    const originalKey = `objects/${sha1}`;
+  /** 上传原图+display 并组装入库行。刻意不含任何 DB 调用——远端后端时
+   *  上传会占满家庭上行，DB 与上传若混在同一文件的处理里，MySQL 握手
+   *  会被拖到池超时（表象 pool timeout active=0） */
+  const uploadOne = async (p: Prepared): Promise<Record<string, unknown> | null> => {
+    const originalKey = `objects/${p.sha1}`;
     const bucketHas = await exists(originalKey);
     if (!bucketHas) {
-      if (!dryRun) await putBuffer(originalKey, buf, sniff.mimeType);
+      if (!dryRun) await putBuffer(originalKey, p.buf, p.sniff.mimeType);
       result.uploaded++;
-      result.bytes += buf.length;
+      result.bytes += p.buf.length;
     } else {
       result.skipBucket++;
     }
-    if (dryRun) return;
+    if (dryRun) return null;
 
     // EXIF 与展示变体；display 失败不阻断入库（前台回退原图，重跑可补）
-    const exif = await extractExif(buf);
+    const exif = await extractExif(p.buf);
     let width: number | undefined;
     let height: number | undefined;
     let dhash: string | null = null;
     try {
-      const display = await generateDisplay(buf);
+      const display = await generateDisplay(p.buf);
       width = display.width;
       height = display.height;
-      await putBuffer(`display/${sha1}.webp`, display.webp, "image/webp");
+      await putBuffer(`display/${p.sha1}.webp`, display.webp, "image/webp");
       // 功能 15：感知哈希 best-effort（backfill-dhash.mts 可对历史行重跑补齐）
       try {
         dhash = await computeDhash(display.webp);
       } catch (err) {
-        log(`  dHash 计算失败 ${rel}: ${err instanceof Error ? err.message : err}`);
+        log(`  dHash 计算失败 ${p.rel}: ${err instanceof Error ? err.message : err}`);
       }
     } catch (err) {
-      log(`  display 生成失败 ${rel}: ${err instanceof Error ? err.message : err}`);
+      log(`  display 生成失败 ${p.rel}: ${err instanceof Error ? err.message : err}`);
     }
-
-    await prisma.photo.create({
-      data: {
-        sha1,
-        title: titleFromFileName(path.basename(file)),
-        fileName: path.basename(file),
-        storageKey: originalKey,
-        mimeType: sniff.mimeType,
-        format: sniff.format,
-        fileSize: BigInt(buf.length),
-        width,
-        height,
-        dhash,
-        shotAt: exif?.shotAt ? new Date(exif.shotAt) : null,
-        exif: exif ? (exif as unknown as object) : undefined,
-        source: "UPLOAD",
-        published: true,
-      },
-    });
-    result.imported++;
-    remember(file, st, sha1);
-    if ((result.imported + result.skipBucket) % 25 === 0) {
-      log(`  进度: 已导入 ${result.imported} · 跳过(库) ${result.skipDb} · 失败 ${result.failed}`);
-    }
+    return {
+      sha1: p.sha1,
+      title: titleFromFileName(path.basename(p.file)),
+      fileName: path.basename(p.file),
+      storageKey: originalKey,
+      mimeType: p.sniff.mimeType,
+      format: p.sniff.format,
+      fileSize: BigInt(p.buf.length),
+      width,
+      height,
+      dhash,
+      shotAt: exif?.shotAt ? new Date(exif.shotAt) : null,
+      exif: exif ? (exif as unknown as object) : undefined,
+      source: "UPLOAD",
+      published: true,
+    };
   };
 
-  /** 简易并发池：固定 worker 数消费文件列表 */
-  await new Promise<void>((resolve) => {
-    let cursor = 0;
-    const workers = Array.from({ length: Math.min(concurrency, pending.length) }, async () => {
-      while (cursor < pending.length) {
-        const item = pending[cursor++];
-        try {
-          await importOne(item.file, item.st);
-        } catch (err) {
-          result.failed++;
-          result.failures.push(item.file);
-          log(`  失败 ${item.file}: ${err instanceof Error ? err.message : err}`);
+  /** 分块处理：hash → 一次性查库去重（块首，链路空闲）→ 并发上传（无 DB）
+   *  → 批量入库（块尾，上传已停）。块大小跟随并发，同时约束内存（整库
+   *  全读进内存不可行） */
+  const CHUNK = Math.max(2, concurrency);
+  for (let i = 0; i < pending.length; i += CHUNK) {
+    const batch = pending.slice(i, i + CHUNK);
+    const prepared: Prepared[] = [];
+    for (const item of batch) {
+      try {
+        const p = await prepareOne(item);
+        if (p) prepared.push(p);
+      } catch (err) {
+        result.failed++;
+        result.failures.push(item.file);
+        log(`  失败 ${item.file}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    if (!prepared.length) continue;
+
+    let existing = new Set<string>();
+    try {
+      const rows = await prisma.photo.findMany({
+        where: { sha1: { in: prepared.map((p) => p.sha1) } },
+        select: { sha1: true },
+      });
+      existing = new Set(rows.map((r) => r.sha1));
+    } catch (err) {
+      // DB 不可达：整块记失败跳过（上传了也入不了库），下轮重来
+      for (const p of prepared) {
+        result.failed++;
+        result.failures.push(p.file);
+      }
+      log(`  查库失败，跳过本块 ${prepared.length} 个（下轮重试）: ${err instanceof Error ? err.message : err}`);
+      continue;
+    }
+
+    const fresh: Prepared[] = [];
+    for (const p of prepared) {
+      if (existing.has(p.sha1)) {
+        result.skipDb++;
+        remember(p.file, p.st, p.sha1);
+      } else {
+        fresh.push(p);
+      }
+    }
+    if (!fresh.length) continue;
+
+    // 上传相位：并发池消费，无 DB 调用
+    const rowsToInsert: Array<{ p: Prepared; row: Record<string, unknown> }> = [];
+    await new Promise<void>((resolve) => {
+      let cursor = 0;
+      const workers = Array.from({ length: Math.min(concurrency, fresh.length) }, async () => {
+        while (cursor < fresh.length) {
+          const p = fresh[cursor++];
+          try {
+            const row = await uploadOne(p);
+            if (row) rowsToInsert.push({ p, row });
+          } catch (err) {
+            result.failed++;
+            result.failures.push(p.file);
+            log(`  上传失败 ${p.file}: ${err instanceof Error ? err.message : err}`);
+          }
+        }
+      });
+      void Promise.all(workers).then(() => resolve());
+    });
+
+    // 块尾：批量入库（字段与逐条 create 路径一致，类型经统一断言）
+    if (!dryRun && rowsToInsert.length) {
+      try {
+        await prisma.photo.createMany({ data: rowsToInsert.map((r) => r.row) as never });
+        for (const { p } of rowsToInsert) {
+          result.imported++;
+          remember(p.file, p.st, p.sha1);
+        }
+      } catch {
+        // 批量失败退化为逐行：撞唯一约束按"库中已有"收敛，其余记失败
+        for (const { p, row } of rowsToInsert) {
+          try {
+            await prisma.photo.create({ data: row as never });
+            result.imported++;
+            remember(p.file, p.st, p.sha1);
+          } catch (err2) {
+            if (err2 instanceof Error && /unique|already exist/i.test(err2.message)) {
+              result.skipDb++;
+              remember(p.file, p.st, p.sha1);
+            } else {
+              result.failed++;
+              result.failures.push(p.file);
+              log(`  入库失败 ${p.file}: ${err2 instanceof Error ? err2.message : err2}`);
+            }
+          }
         }
       }
-    });
-    void Promise.all(workers).then(() => resolve());
-  });
+      if ((result.imported + result.skipBucket) % 25 === 0) {
+        log(`  进度: 已导入 ${result.imported} · 跳过(库) ${result.skipDb} · 失败 ${result.failed}`);
+      }
+    }
+  }
 
   if (useCache && !dryRun) {
-    for (const key of Object.keys(cache)) {
-      if (!stats.has(key)) delete cache[key];
-    }
-    try {
-      const file = cachePath as string;
-      await mkdir(path.dirname(file), { recursive: true });
-      const tmp = `${file}.tmp`;
-      await writeFile(tmp, JSON.stringify(cache), "utf8");
-      await rename(tmp, file);
-    } catch (err) {
-      log(`  缓存写入失败（不影响导入结果）: ${err instanceof Error ? err.message : err}`);
+    // 空扫描 + 缓存非空 ≈ 挂载掉线（bind 到了空目录）：不清缓存，
+    // 否则掉线一轮就把增量缓存清光，恢复后全量重读 SMB
+    if (files.length === 0 && Object.keys(cache).length > 0) {
+      log("  扫描结果为 0 且缓存非空（疑似挂载掉线），保留缓存不清空");
+    } else {
+      for (const key of Object.keys(cache)) {
+        if (!stats.has(key)) delete cache[key];
+      }
+      try {
+        const file = cachePath as string;
+        await mkdir(path.dirname(file), { recursive: true });
+        const tmp = `${file}.tmp`;
+        await writeFile(tmp, JSON.stringify(cache), "utf8");
+        await rename(tmp, file);
+      } catch (err) {
+        log(`  缓存写入失败（不影响导入结果）: ${err instanceof Error ? err.message : err}`);
+      }
     }
   }
 

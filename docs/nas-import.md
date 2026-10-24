@@ -13,23 +13,33 @@
 > NAS 端）产生的变更，fswatch 对主场景无效。轮询 + stat 增量缓存（未变文件不读
 > 字节）在使用上等同监听；新照片从落盘到入画廊约 2–4 分钟（含防半写保护期）。
 
-## 一、开启共享并挂载（一次性）
+## 一、开启共享并挂载
 
 1. 手机「智慧生活」App → 华为家庭存储 → **开启"网络邻居"**（只有「家庭共享」
    与「个人共享」文件夹可被共享；相册照片需先位于其中）。
-2. Mac 挂载：Finder ⌘K → `smb://<NAS 内网 IP>` → 选共享文件夹，挂载在
-   `/Volumes/<共享名>`。要开机自动重挂，把它加入
-   系统设置 → 通用 → 登录项与扩展 → 登录项。
    官方文档：[电脑通过网络邻居（samba）访问华为家庭存储](https://consumer.huawei.com/cn/support/content/zh-cn15927787)
-3. Docker Desktop → Settings → Resources → **File Sharing** 确认包含该挂载路径
-   （默认含 `/Volumes`）。
+2. **自动挂载（已配置，推荐）**：`launchd` 每分钟跑 `scripts/mount-nas.sh`——
+   开机/登录后自动挂载（等网络就绪重试 ~60s），睡眠唤醒掉线自动重挂，挂载成功
+   自动重启 nas-watcher 容器重新绑定。挂载点固定 `/Users/haoliang/huawei-nas`
+   （当前挂「家庭共享」，监听其中的「皓亮君作品集」），日志
+   `~/Library/Logs/nas-mount.log`。安装/重载：
+   ```bash
+   cp launchd/com.sologallery.nas-mount.plist ~/Library/LaunchAgents/
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.sologallery.nas-mount.plist
+   ```
+   注意：Finder ⌘K 挂出来的 `/Volumes/<共享名>` 是**登录会话级**的，重启即失，
+   不要拿它做 bind 源；手动挂载等价命令
+   `mount_smbfs '//GUEST@192.168.31.10/%E5%AE%B6%E5%BA%AD%E5%85%B1%E4%BA%AB' ~/huawei-nas`
+   （共享名中文须 URL 编码）。
+3. Docker Desktop → Settings → Resources → **File Sharing** 确认包含挂载路径
+   （`/Users` 默认包含）。
 
 ## 二、配置
 
 `.env` 追加（确认 MinIO/MySQL 连接串与画廊容器用的是同一份）：
 
 ```ini
-NAS_SRC_HOST=/Volumes/你的共享名        # 宿主挂载点绝对路径
+NAS_SRC_HOST=/Users/haoliang/huawei-nas/皓亮君作品集   # 挂载点（可指到子目录）
 WATCH_INTERVAL_SECONDS=120             # 轮询间隔秒（下限 30）
 ```
 

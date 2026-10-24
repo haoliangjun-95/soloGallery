@@ -25,7 +25,9 @@ async function tick(): Promise<void> {
   busy = true;
   const startedAt = Date.now();
   try {
-    const res = await runImport({ src: SRC });
+    // 并发 2：远端后端时 4 并发上传会挤占上行带宽，拖死 MySQL 握手
+    // （本地/LAN 后端可调回 4）
+    const res = await runImport({ src: SRC, concurrency: 2 });
     if (res.sourceMissing) {
       console.log(`[watch] 源目录不存在（挂载掉线？），本轮跳过`);
       return;

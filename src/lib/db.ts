@@ -12,6 +12,9 @@ function createAdapter() {
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, ""),
     connectionLimit: 10,
+    // 池取连接超时：连远端库时，NAS 导入的上传会占满家庭上行，新连接
+    // TCP 握手可能超过 mariadb 默认 10s（表象为 pool timeout active=0）
+    acquireTimeout: 30_000,
     // ?ssl=true 启用 TLS（自签证书放行）：MySQL 8 caching_sha2_password 完整认证
     // 在明文连接上会被拒发 RSA 公钥（ER_CANNOT_RETRIEVE_RSA_KEY），重启后首连必触发
     ...(u.searchParams.get("ssl") === "true"
