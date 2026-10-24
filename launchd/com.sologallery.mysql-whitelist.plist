@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sologallery.mysql-whitelist</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/haoliang/code/github/soloGallery/scripts/mysql-whitelist-update.sh</string>
+    </array>
+    <!-- 每 15 分钟心跳：出口 IP 变化时服务器白名单自动跟随（双线负载均衡下
+         以服务器侧观察到的 ssh 来源 IP 为准，滚动保留最近 2 个）。
+         间隔别低于 15min：服务器 sshd 有连接频率限制（MaxStartups/fail2ban），
+         过密的 ssh 会触发 banner exchange 节流，殃及运维连接 -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/haoliang/Library/Logs/mysql-whitelist.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/haoliang/Library/Logs/mysql-whitelist.log</string>
+</dict>
+</plist>

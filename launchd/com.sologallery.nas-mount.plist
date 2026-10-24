@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sologallery.nas-mount</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/haoliang/code/github/soloGallery/scripts/mount-nas.sh</string>
+    </array>
+    <!-- 登录即检查 + 每分钟自检（已挂载时瞬时退出，接近零开销）：
+         开机自动挂载、睡眠唤醒掉线自动重挂，成功后自动重启 watcher 容器重绑 -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>60</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/haoliang/Library/Logs/nas-mount.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/haoliang/Library/Logs/nas-mount.log</string>
+</dict>
+</plist>
