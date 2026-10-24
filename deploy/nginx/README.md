@@ -20,11 +20,18 @@
 
 ## 防护面
 
-1. **UA 拦截**（antibot.conf）：AI 训练/采集爬虫 `return 444`（断连无响应）。名单与
-   `src/app/robots.ts` 的 `deniedAgents` 同步维护。
-2. **IP deny**（antibot.conf）：观测到的爬虫源段双保险。
-3. **限流**：全站 10r/s burst 20，`/bucket/` 图片 15r/s burst 40，超发 429。
-   vividDeck 桌面端走 9000 S3 直连不经 nginx，不受影响。
+1. **UA 拦截**（antibot.conf）：AI 训练/采集爬虫与常见扫描器 `return 444`（断连无响应，
+   body 0 字节，不进应用）。**/robots.txt 对所有 UA 放行**——遵守 robots 的爬虫必须能读到
+   `Disallow: /` 才会彻底停止；若连 robots.txt 也断连，它会把 444 当作暂时故障、持续重试
+   囤积的 URL 队列（2026-10-21 实测 GPTBot 换 IP 后日均 4300 次 444）。
+   nginx 名单 ⊇ `src/app/robots.ts` 的 `deniedAgents`：差集（facebookexternalhit、扫描器）
+   是不认 robots 的，只能靠 UA 拦。
+2. **IP deny**：已移除对自报 UA 爬虫的 deny（UA 规则已覆盖且不随 IP 漂移；deny 会把
+   robots.txt 也 403，RFC 9309 下 4xx 等于 allow-all）。`deny` 只留给不报 UA 的纯扫描器。
+3. **限流**：全站 30r/s burst 80，`/bucket/` 图片 30r/s burst 100，超发 429。
+   阈值按真实浏览校准：网格页单秒 60+ 请求（srcset 图片 + Next.js 链接预取），
+   原 15r/s burst30/40 曾误伤自家 IP 118 个 429。目标是拦百级/秒的病态突发，
+   不是整形正常浏览。vividDeck 桌面端走 9000 S3 直连不经 nginx，不受影响。
 4. **防盗链**（bucket-proxy.conf）：`/bucket/` 只放行空 Referer 与自家域名，
    外站热链 403。
 5. **XFF 覆写**（主 vhost 一行改动，不入库存档全文）：宝塔默认
@@ -49,6 +56,8 @@ nginx -t && nginx -s reload
 
 ## 观测与调参
 
-- 日志：`/www/wwwlogs/gallery.haoliangjun.com.log`（444 不留访问日志，deny/403/429 有记录）
-- 若正常访客误触 429：调高 `sologallery_general` 的 rate 或 burst
+- 日志：`/www/wwwlogs/gallery.haoliangjun.com.log`。**444 同样会记访问日志**（状态列 444、
+  字节 0），宝塔统计面板只数日志行、不分状态码——被拦截的爬虫在面板里仍显示为"请求"，
+  判断是否真被拦要看状态码与 `body_bytes_sent`，不能只看请求数
+- 若正常访客误触 429：按 `awk '$9==429'` 看命中 IP 的 UA 与每秒请求数，再调 rate/burst
 - 若自家分享渠道图片 403：看 403 行的 Referer，把对应域名加进 `valid_referers`
